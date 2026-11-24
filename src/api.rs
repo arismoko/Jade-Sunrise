@@ -31,8 +31,12 @@ pub enum El {
     Item { id: String, count: u32, small: bool },
     /// The progress arrow (JadeUI.progressArrow), 0 to 1.
     Arrow(f32),
-    /// A progress bar (fluid, energy, ProgressView), 0 to 1, its colour `0xRRGGBB` and the text on it.
+    /// A progress bar (energy, ProgressView), 0 to 1, its colour `0xRRGGBB` and the text on it.
     Bar { frac: f32, color: u32, text: String },
+    /// A fluid icon drawn via `DrawContext::fluid`.
+    Fluid(String),
+    /// A fluid progress bar filled with the fluid's own look (`DrawContext::fluid`).
+    FluidBar { fluid: String, frac: f32, text: String },
     Hearts { health: f32, max: f32, absorb: f32 },
     Armor(f32),
     Space(f32),
@@ -99,6 +103,8 @@ pub fn encode(line: &Line) -> String {
             El::Item { id, count, small } => format!("{CMD}i {id} {count} {}", u8::from(*small)),
             El::Arrow(f) => format!("{CMD}a {f}"),
             El::Bar { frac, color, text } => format!("{CMD}b {frac} {color} {}", clean(text)),
+            El::Fluid(f) => format!("{CMD}f {}", clean(f)),
+            El::FluidBar { fluid, frac, text } => format!("{CMD}F {frac} {} {}", clean(fluid), clean(text)),
             El::Hearts { health, max, absorb } => format!("{CMD}h {health} {max} {absorb}"),
             El::Armor(a) => format!("{CMD}r {a}"),
             El::Space(w) => format!("{CMD}s {w}"),
@@ -129,6 +135,8 @@ pub fn decode(s: &str) -> Line {
             }),
             Some("a") => line.els.push(El::Arrow(f(1))),
             Some("b") => line.els.push(El::Bar { frac: f(1), color: f(2) as u32, text: w.get(3).copied().unwrap_or("").to_owned() }),
+            Some("f") => line.els.push(El::Fluid(rest())),
+            Some("F") => line.els.push(El::FluidBar { fluid: w.get(2).copied().unwrap_or("").to_owned(), frac: f(1), text: w.get(3).copied().unwrap_or("").to_owned() }),
             Some("h") => line.els.push(El::Hearts { health: f(1), max: f(2), absorb: f(3) }),
             Some("r") => line.els.push(El::Armor(f(1))),
             Some("s") => line.els.push(El::Space(f(1).clamp(0.0, 200.0))),
@@ -195,6 +203,11 @@ pub fn item_name(id: &str) -> String {
 /// An entity type's name (`entity.<ns>.<path>`) as a marker the client resolves.
 pub fn entity_name(id: &str) -> String {
     tr("@entity", id, &[id])
+}
+
+/// A fluid's name (`ClientHost::fluid_name`) as a marker the client resolves.
+pub fn fluid_name(id: &str) -> String {
+    tr("@fluid", id, &[id])
 }
 
 /// What the player looks at.

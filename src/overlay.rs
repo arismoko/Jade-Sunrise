@@ -141,6 +141,10 @@ fn marker(h: &dyn ClientHost, c: &[char], i: &mut usize, depth: u8) -> String {
     match key.as_str() {
         "@item" => item_name(h, args.first().copied().unwrap_or(&fallback)),
         "@entity" => entity_name(h, args.first().copied().unwrap_or(&fallback)),
+        "@fluid" => {
+            let id = args.first().copied().unwrap_or(&fallback);
+            if id == "minecraft:powder_snow" { block_name(h, id) } else { h.fluid_name(id) }
+        }
         _ => fill(&tr(h, &key, &fallback), &args),
     }
 }
@@ -1101,7 +1105,7 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
         for e in &mut l.els {
             match e {
                 El::Text(t) | El::Small(t) | El::Mark(t) | El::Title(t) => *t = resolve(h, t),
-                El::Bar { text, .. } => *text = resolve(h, text),
+                El::Bar { text, .. } | El::FluidBar { text, .. } => *text = resolve(h, text),
                 _ => {}
             }
         }
@@ -1161,7 +1165,8 @@ fn size(h: &dyn ClientHost, e: &El) -> (f32, f32) {
         El::Item { small: true, .. } => (10.0, 9.0),
         El::Item { .. } => (18.0, 18.0),
         El::Arrow(_) => (22.0, 16.0),
-        El::Bar { text, .. } => ((gfx::width(h, text) + 6.0).max(100.0), 12.0),
+        El::Bar { text, .. } | El::FluidBar { text, .. } => ((gfx::width(h, text) + 6.0).max(100.0), 12.0),
+        El::Fluid(_) => (10.0, 9.0),
         El::Small(t) => (gfx::width(h, t) * 0.75, 7.0),
         El::Hearts { max, absorb, .. } => {
             let icons = ((max.ceil() + absorb.ceil()) / 2.0).ceil().max(1.0);
@@ -1222,11 +1227,38 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
                 g.sprite(&theme.sprite("jade:progress"), [0.0, 0.0, done, 16.0], [x, y, done, 16.0], 0xFFFF_FFFF);
             }
         }
-        // A fluid or energy bar with its text.
+        // An energy or progress bar with its text.
         El::Bar { frac, color, text } => {
             let (w, _) = size(h, e);
             g.fill([x, y, w, 12.0], 0xFF2A_2A2A);
             g.fill([x + 1.0, y + 1.0, ((w - 2.0) * frac.clamp(0.0, 1.0)).floor(), 10.0], 0xFF00_0000 | color);
+            g.text(&look.map(text), [x + 3.0, y + 2.0], 0xFFFF_FFFF, look.shadow);
+        }
+        El::Fluid(fluid) => {
+            if !fluid.is_empty() && h.fluid_key(fluid).is_some() {
+                g.fluid(fluid, [x, y], 9.0);
+            } else if fluid == "minecraft:powder_snow" {
+                g.item("minecraft:powder_snow_bucket", [x, y], 8.0);
+            }
+        }
+        El::FluidBar { fluid, frac, text } => {
+            let (w, _) = size(h, e);
+            g.fill([x, y, w, 12.0], 0xFF2A_2A2A);
+            let fill_w = ((w - 2.0) * frac.clamp(0.0, 1.0)).floor();
+            if fill_w > 0.0 && !fluid.is_empty() {
+                if h.fluid_key(fluid).is_some() {
+                    if g.clip([x + 1.0, y + 1.0, fill_w, 10.0]) {
+                        let mut tx = 0.0;
+                        while tx < fill_w {
+                            g.fluid(fluid, [x + 1.0 + tx, y + 1.0], 10.0);
+                            tx += 10.0;
+                        }
+                        g.unclip();
+                    }
+                } else if fluid == "minecraft:powder_snow" {
+                    g.fill([x + 1.0, y + 1.0, fill_w, 10.0], 0xFFF0_F0F0);
+                }
+            }
             g.text(&look.map(text), [x + 3.0, y + 2.0], 0xFFFF_FFFF, look.shadow);
         }
         // HealthElement: hearts in rows (or "health/max" past Max Health for Render).

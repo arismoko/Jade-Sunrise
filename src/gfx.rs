@@ -192,6 +192,12 @@ impl<'a> Gfx<'a> {
         self.d.item(key, at, size * self.scale)
     }
 
+    /// A fluid's look (`DrawContext::fluid`), `size` GUI pixels square before the transform.
+    pub fn fluid(&mut self, id: &str, at: [f32; 2], size: f32) {
+        let at = self.p(at);
+        self.d.fluid(id, at, size * self.scale);
+    }
+
 
     /// A GUI sprite (atlas name) stretched over `rect`, tinted white with the transform's alpha. False when the atlas
     /// hasn't it.

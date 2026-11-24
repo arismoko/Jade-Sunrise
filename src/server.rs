@@ -399,21 +399,6 @@ pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: im
     }
 }
 
-fn fluid_color(fluid: &str) -> u32 {
-    match fluid {
-        "minecraft:water" => 0x3F76E4,
-        "minecraft:lava" => 0xD96415,
-        "minecraft:powder_snow" => 0xF0F0F0,
-        _ => 0x8080FF,
-    }
-}
-
-/// A fluid's name: its `block.<ns>.<path>` (vanilla's), resolved on the client.
-fn fluid_name(fluid: &str) -> String {
-    let (ns, path) = fluid.split_once(':').unwrap_or(("minecraft", fluid));
-    tr(&format!("block.{ns}.{path}"), path, &[])
-}
-
 /// FluidStorageProvider's line in Fluid Storage's Display Style: "Water 4,000 mB" (with Show Details "/ 16,000 mB").
 pub fn fluid_line(host: &dyn Host, fluid: Option<&str>, mb: u32, capacity: u32, details: bool) -> Line {
     let style = opt(host, "fluid_style");
@@ -422,17 +407,20 @@ pub fn fluid_line(host: &dyn Host, fluid: Option<&str>, mb: u32, capacity: u32, 
         Some(f) if mb > 0 => {
             if details && style == "bar" {
                 let amounts = tr("jade.fluid.with_capacity", "%s / %s", &[&format!("§f{} mB§r", commas(mb)), &format!("{} mB", commas(capacity))]);
-                tr("jade.fluid", "%s %s", &[&fluid_name(f), &amounts])
+                tr("jade.fluid", "%s %s", &[&api::fluid_name(f), &amounts])
             } else {
-                tr("jade.fluid", "%s %s", &[&fluid_name(f), &format!("§f{} mB", commas(mb))])
+                tr("jade.fluid", "%s %s", &[&api::fluid_name(f), &format!("§f{} mB", commas(mb))])
             }
         }
         _ => tr("jade.fluid", "%s %s", &[&tr("jade.fluid.empty", "Empty", &[]), &format!("{} mB", commas(capacity))]),
     };
     match style.as_str() {
         "plain" => Line::text(text),
-        "icon" => Line::new().with(Line::small("minecraft:bucket")).with(El::Text(text)),
-        _ => Line::new().with(El::Bar { frac: mb as f32 / capacity.max(1) as f32, color: fluid.map_or(0x8080FF, fluid_color), text }),
+        "icon" => match fluid.filter(|_| mb > 0) {
+            Some(f) => Line::new().with(El::Fluid(f.to_owned())).with(El::Text(text)),
+            None => Line::new().with(Line::small("minecraft:bucket")).with(El::Text(text)),
+        },
+        _ => Line::new().with(El::FluidBar { fluid: fluid.filter(|_| mb > 0).unwrap_or("").to_owned(), frac: mb as f32 / capacity.max(1) as f32, text }),
     }
 }
 
