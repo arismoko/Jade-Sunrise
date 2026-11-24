@@ -1,4 +1,4 @@
-//! `/<ns>`: this mod's commands menu. The shared guide mod (GuideME, `guide-fork`) draws it from
+//! `/<ns>`: this mod's commands menu. The shared guide mod (GuideME) draws it from
 //! `assets/<ns>/commands/` as it draws the W guide: a tree of the commands, a page for each with its usage, what it
 //! does and a 3D scene where one helps.
 //!

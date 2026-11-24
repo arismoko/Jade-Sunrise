@@ -6,8 +6,8 @@
 //!
 //! Sunrise has no way into another screen's page (Options > Mods' Config button opens a mod's registered settings):
 //! the screens open from Jade's Open Config key and `/jadec config`. The list, its cards and the navigation column are
-//! clipped to their boxes (`push_clip`), as Java's scissors cut them. Key binds show here; they are changed in Controls
-//! (no API sets a mod's key binding).
+//! clipped to their boxes (`push_clip`), as Java's scissors cut them. Jade's key binds can be rebound and reset right
+//! here through `ModKeyMappingRef::set_binding` and `reset_binding`, staying in sync with Controls.
 //!
 //! Its words are the jar's language files (shipped in assets), keys named beside each use.
 use crate::client;

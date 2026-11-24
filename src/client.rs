@@ -109,8 +109,8 @@ pub fn tick(h: &mut dyn ClientHost) {
     }
     keys(h);
     // Narrate Key Binds (the key's new state) and Narrate Target (the box), said by the game's narrator. Java Jade
-    // speaks the box through text2speech whatever the Narrator option is; the game's narrator says nothing while the
-    // option is Off or Chat only (`NarrateError::Off`).
+    // checks `narrator.isActive()` (true for All, Chat, and System; silent when Off); Sunrise's `ClientHost::narrate`
+    // (`saySystemNow`) only differs for `Chat only`, where it returns `NarrateError::Off`.
     for text in [with(|c| c.say.take()), with(|c| c.speak.take())].into_iter().flatten() {
         let _ = h.narrate(&Text::literal(text), Narration::Now);
     }

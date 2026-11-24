@@ -1,6 +1,9 @@
-//! Jade's lines for entities, built on the server (Sunrise's client entity handles read no entity data): VanillaPlugin's
-//! entity providers and the AccessibilityPlugin's, from the entity's saved data (`Entity.saveWithoutId`, what `/data get
-//! entity` shows) and the living, merchant and attribute reads. Text the client must translate is written as markers.
+//! Jade's lines for entities, built on the server: on Sunrise's client, entity handles read position, rotation, eye
+//! height/position, on-ground, tick count and riding links (`vehicle`/`passengers`), and `Host::living` resolves only
+//! the local player; `entity_kind`, `entity_nbt`, `entity_pose`, `entity_leash_holder`, `display`, `item_entity_stack`,
+//! `merchant` and other entities' living state stay server-only. This builds VanillaPlugin's entity providers and the
+//! AccessibilityPlugin's from the entity's saved data (`Entity.saveWithoutId`, what `/data get entity` shows) and the
+//! living, merchant and attribute reads. Text the client must translate is written as markers.
 use crate::api::{El, Line, Request, entity_name, item_name, tr};
 use crate::opts::{num, on, opt, roman, seconds_marker, tick_duration, trim2};
 use crate::server::storage;
