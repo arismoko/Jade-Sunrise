@@ -542,17 +542,18 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         progress.extend(f(host, req));
     }
     let Some(be) = be else {
-        // FluidStorageProvider for cauldrons: water, lava or powder snow by level.
+        // FluidStorageProvider for cauldrons: registered fluid cauldrons, plus powder snow cauldron.
         if on(host, "fluid_storage") && (details || !on(host, "fluid_detailed")) {
-            let lvl = || level.block_property(host, pos, "level").and_then(|l| l.parse::<u32>().ok()).unwrap_or(0);
-            let (fluid, mb) = match block {
-                "minecraft:water_cauldron" => (Some("minecraft:water"), lvl() * 1000 / 3),
-                "minecraft:lava_cauldron" => (Some("minecraft:lava"), 1000),
-                "minecraft:powder_snow_cauldron" => (Some("minecraft:powder_snow"), lvl() * 1000 / 3),
-                _ => (None, 0),
-            };
-            if let Some(f) = fluid {
-                lines.push(fluid_line(host, Some(f), mb, 1000, details));
+            if let Some(bs) = level.block_state(host, pos)
+                && let Some(content) = host.cauldron_content_for_block(bs.block())
+                && let Some(fluid) = content.fluid.id(host)
+            {
+                let lvl = host.cauldron_level(bs).unwrap_or(0);
+                let mb = lvl.saturating_mul(content.total) / content.max_level.max(1);
+                lines.push(fluid_line(host, Some(fluid), mb, content.total, details));
+            } else if block == "minecraft:powder_snow_cauldron" {
+                let lvl = level.block_property(host, pos, "level").and_then(|l| l.parse::<u32>().ok()).unwrap_or(0);
+                lines.push(fluid_line(host, Some("minecraft:powder_snow"), lvl * 1000 / 3, 1000, details));
             }
         }
         push_progress(progress, lines);
