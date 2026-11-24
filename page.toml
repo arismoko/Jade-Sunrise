@@ -13,6 +13,20 @@ What it does:
 - The config screens, with search and four profiles; the keys are under Controls, category Jade.
 - `/jadec` client commands, `/jade show|hide` for operators, and the `jade:max_position_deviation` game rule.
 - In multiplayer the server answers only for blocks and entities in your reach, and shows a locked container as locked.
+
+Differences from the original, each waiting on a piece of Sunrise's mod API:
+
+- The jump and speed factor lines are missing (sunrise-org/sunrise#5307, fixed for the next Sunrise build), and so are the fire odds lines (sunrise-org/sunrise#5492).
+- The `POI:` line is missing (sunrise-org/sunrise#5493).
+- Mods that don't name themselves to Jade show a name made from their id (sunrise-org/sunrise#5494).
+- On a server without Jade, entities show no overlay; with Jade on the server every line shows (sunrise-org/sunrise#4741, #5321, #5498). A sitting panda shows no sitting state (sunrise-org/sunrise#5499).
+- Dropped items don't show their own tooltip lines (sunrise-org/sunrise#5332).
+- Block and entity icons are the plain item, without a banner's pattern or a mob's spawn egg (sunrise-org/sunrise#5289, #5495).
+- Options › Mods' Config button doesn't open Jade's screens; use the Open Config key or `/jadec config` (sunrise-org/sunrise#1217).
+- "Edit ignore list in Files…" prints the paths in chat (sunrise-org/sunrise#5336).
+- Narrate is silent while the Narrator option is "Chat only" (sunrise-org/sunrise#5496).
+
+Not done yet in the port: the full provider API for other mods, the interactive pin screen, Save & Quit and Cancel in the config screens, and REI and Polydex compatibility (recipe lookup works through JEI). The README lists them all.
 """
 authors = ["Sunrise port: Joeypc6", "Snownee", "arismoko"]
 homepage = "https://github.com/arismoko/Jade-Sunrise"
