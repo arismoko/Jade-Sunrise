@@ -168,7 +168,7 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
         let mut wrap = |pattern: String| lines.push(Line::new().with(El::Title(pattern)));
         match kind {
             "minecraft:creeper" if flag(nbt, "powered") => wrap(tr("jade.access.creeper.powered", "Charged {0}", &[])),
-            "minecraft:wither" if living.is_some_and(|l| l.health(host).unwrap_or(0.0) <= l.max_health(host).unwrap_or(0.0) / 2.0) => wrap(tr("jade.access.wither.powered", "Powered {0}", &[])),
+            "minecraft:wither" if living.is_some_and(|l| matches!((l.health(host), l.max_health(host)), (Some(h), Some(m)) if m > 0.0 && h <= m / 2.0)) => wrap(tr("jade.access.wither.powered", "Powered {0}", &[])),
             "minecraft:zombie_villager" if int(cget(nbt, "ConversionTime")).is_some_and(|t| t > 0) => wrap(tr("jade.access.zombie_villager.curing", "Curing {0}", &[])),
             "minecraft:goat" if !flag(nbt, "HasLeftHorn") && !flag(nbt, "HasRightHorn") && cget(nbt, "HasLeftHorn").is_some() => wrap(tr("jade.access.goat.hornless", "Hornless {0}", &[])),
             "minecraft:bee" => {
@@ -195,20 +195,40 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
         if baby {
             wrap(tr("jade.access.entity.baby", "Baby {0}", &[]));
         }
-        if matches!(kind, "minecraft:sheep" | "minecraft:mooshroom" | "minecraft:snow_golem" | "minecraft:bogged") && (flag(nbt, "Sheared") || (baby && kind != "minecraft:snow_golem")) {
-            wrap(tr("jade.access.entity.sheared", "Sheared {0}", &[]));
+        let saddle_occupied = living.and_then(|l| l.with_equipment(host, EquipmentSlot::Saddle, |_| ())).is_some();
+        match kind {
+            // Copper golem's antenna slot is EquipmentSlot::Saddle; it is shearable when holding a flower there.
+            "minecraft:copper_golem" => {
+                if saddle_occupied {
+                    wrap(tr("jade.access.entity.shearable", "Shearable {0}", &[]));
+                }
+            }
+            "minecraft:sheep" if flag(nbt, "Sheared") || baby => wrap(tr("jade.access.entity.sheared", "Sheared {0}", &[])),
+            "minecraft:mooshroom" if baby => wrap(tr("jade.access.entity.sheared", "Sheared {0}", &[])),
+            "minecraft:snow_golem" if cget(nbt, "Pumpkin").is_some() && !flag(nbt, "Pumpkin") => wrap(tr("jade.access.entity.sheared", "Sheared {0}", &[])),
+            "minecraft:bogged" if flag(nbt, "sheared") || flag(nbt, "Sheared") => wrap(tr("jade.access.entity.sheared", "Sheared {0}", &[])),
+            _ => {}
         }
-        if kind == "minecraft:sheep" {
-            const DYES: [&str; 16] = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"];
-            let color = match cget(nbt, "Color") {
-                Some(Tag::String(s)) => s.to_string_lossy(),
-                t => DYES.get(int(t).unwrap_or(0) as usize).copied().unwrap_or("white").to_owned(),
-            };
+        if kind != "minecraft:copper_golem" && saddle_occupied {
+            wrap(tr("jade.access.entity.saddled", "Saddled {0}", &[]));
+        }
+        const DYES: [&str; 16] = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"];
+        let dye = |t: Option<&Tag>| -> Option<String> {
+            match t? {
+                Tag::String(s) => Some(s.to_string_lossy()),
+                other => usize::try_from(int(Some(other))?).ok().and_then(|i| DYES.get(i).copied()).map(str::to_owned),
+            }
+        };
+        let tamed = living.and_then(|l| l.is_tamed(host)).unwrap_or(false) || cget(nbt, "Owner").is_some();
+        let color = match kind {
+            "minecraft:sheep" | "minecraft:shulker" => dye(cget(nbt, "Color")),
+            "minecraft:wolf" | "minecraft:cat" if tamed => dye(cget(nbt, "CollarColor")),
+            "minecraft:tropical_fish" => int(cget(nbt, "Variant")).and_then(|v| DYES.get(((v >> 16) & 15) as usize).copied()).map(str::to_owned),
+            _ => None,
+        };
+        if let Some(color) = color {
             let english = format!("{} {{0}}", color.split('_').map(|w| w[..1].to_uppercase() + &w[1..]).collect::<Vec<_>>().join(" "));
             wrap(tr(&format!("jade.access.entity.{color}"), &english, &[]));
-        }
-        if living.and_then(|l| l.with_equipment(host, EquipmentSlot::Saddle, |_| ())).is_some() {
-            wrap(tr("jade.access.entity.saddled", "Saddled {0}", &[]));
         }
     }
     // NpcDescriptionProvider: a mannequin's description after its name.
@@ -216,20 +236,63 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
         let d = string(cget(nbt, "description")).unwrap_or_else(|| tr("entity.minecraft.mannequin.label", "NPC", &[]));
         lines.push(Line::new().with(El::Title(tr("jade.access.npc_description", "%s (%s)", &["{0}", &d]))));
     }
-    // EntityVariantProvider: what a mob's variant is.
+    // EntityVariantProvider: what a mob's variant is, plus horse markings.
     if access(host, "access_variant") {
-        let variant = string(cget(nbt, "variant")).or_else(|| string(cget(nbt, "Variant"))).or_else(|| cget(nbt, "VillagerData").and_then(|v| string(v.get("type"))));
-        if let Some(v) = variant.filter(|_| kind != "minecraft:painting") {
+        let variant = match kind {
+            "minecraft:painting" => None,
+            "minecraft:horse" => {
+                const COATS: [&str; 7] = ["white", "creamy", "chestnut", "brown", "black", "gray", "dark_brown"];
+                int(cget(nbt, "Variant")).and_then(|v| COATS.get((v & 0xFF) as usize).copied()).map(str::to_owned)
+            }
+            "minecraft:llama" | "minecraft:trader_llama" => {
+                const COATS: [&str; 4] = ["creamy", "white", "brown", "gray"];
+                int(cget(nbt, "Variant")).and_then(|v| COATS.get(v as usize).copied()).map(str::to_owned)
+            }
+            "minecraft:parrot" => {
+                const PARROTS: [&str; 5] = ["red_blue", "blue", "green", "yellow_blue", "gray"];
+                int(cget(nbt, "Variant")).and_then(|v| PARROTS.get(v as usize).copied()).map(str::to_owned)
+            }
+            "minecraft:axolotl" => {
+                const AXOLOTLS: [&str; 5] = ["lucy", "wild", "gold", "cyan", "blue"];
+                int(cget(nbt, "Variant")).and_then(|v| AXOLOTLS.get(v as usize).copied()).map(str::to_owned)
+            }
+            "minecraft:tropical_fish" => {
+                const PATTERNS: [&str; 12] = ["kob", "sunstreak", "snooper", "dasher", "brinely", "spotty", "flopper", "stripey", "glitter", "blockfish", "betty", "clayfish"];
+                int(cget(nbt, "Variant")).and_then(|v| PATTERNS.get((((v & 1) * 6) + ((v >> 8) & 0xFF)) as usize).copied()).map(str::to_owned)
+            }
+            "minecraft:fox" | "minecraft:mooshroom" => string(cget(nbt, "Type")),
+            "minecraft:salmon" => string(cget(nbt, "type")),
+            "minecraft:rabbit" => match int(cget(nbt, "RabbitType")) {
+                Some(0) => Some("brown".to_owned()),
+                Some(1) => Some("white".to_owned()),
+                Some(2) => Some("black".to_owned()),
+                Some(3) => Some("white_splotched".to_owned()),
+                Some(4) => Some("gold".to_owned()),
+                Some(5) => Some("salt".to_owned()),
+                Some(99) => Some("evil".to_owned()),
+                _ => None,
+            },
+            _ => string(cget(nbt, "variant")).or_else(|| string(cget(nbt, "Variant"))).or_else(|| cget(nbt, "VillagerData").and_then(|v| string(v.get("type")))),
+        };
+        if let Some(v) = variant {
             let mob = short(kind);
             let name = short(&v);
             let words = tr(&format!("jade.access.entity.{mob}.{name}"), &name.replace(['.', '_'], " "), &[]);
             lines.push(Line::text(tr("jade.access.entity.variant", "Variant: %s", &[&words])));
         }
+        if kind == "minecraft:horse"
+            && let Some(v) = int(cget(nbt, "Variant"))
+        {
+            const MARKINGS: [&str; 5] = ["none", "white", "white_field", "white_dots", "black_dots"];
+            if let Some(m) = MARKINGS.get(((v >> 8) & 0xFF) as usize) {
+                let label = tr(&format!("jade.access.entity.horse_markings.{m}"), &m.replace('_', " "), &[]);
+                lines.push(Line::text(tr("jade.access.entity.horse_markings", "Markings: %s", &[&label])));
+            }
+        }
     }
-    // HeldItemProvider: both hands.
+    // HeldItemProvider: both hands for any living entity (including players).
     if access(host, "access_held")
         && let Some(l) = living
-        && kind != "minecraft:player"
     {
         if let Some(item) = l.with_hand_item(host, Hand::Main, |s| s.item()) {
             lines.push(Line::text(tr("jade.access.held_item.main", "Main Hand: %s", &[&item_name(item.id(host).unwrap_or_default())])));
@@ -238,16 +301,21 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
             lines.push(Line::text(tr("jade.access.held_item.off", "Off Hand: %s", &[&item_name(item.id(host).unwrap_or_default())])));
         }
     }
-    // EntityDetailsBodyProvider: pose, passengers, leads.
+    // EntityDetailsBodyProvider: pose, leads.
     if access(host, "access_entity") {
         let pose = match (kind, e.pose(host)) {
+            ("minecraft:armadillo", _) if string(cget(nbt, "state")).as_deref() == Some("rolling") => Some("1001"),
+            ("minecraft:axolotl", _) if flag(nbt, "PlayingDead") => Some("1000"),
+            ("minecraft:fox", _) if flag(nbt, "Sleeping") => Some("2"),
+            ("minecraft:fox", _) if flag(nbt, "Sitting") => Some("10"),
+            ("minecraft:camel" | "minecraft:camel_husk", _) if int(cget(nbt, "LastPoseTick")).is_some_and(|t| t < 0) => Some("10"),
+            ("minecraft:panda", _) if flag(nbt, "Sitting") || int(cget(nbt, "SitAmount")).is_some_and(|v| v > 0) => Some("10"),
             (_, Some("sleeping")) => Some("2"),
             (_, Some("swimming")) => Some("3"),
             (_, Some("crouching")) => Some("5"),
             (_, Some("dying")) => Some("7"),
             (_, Some("sitting")) => Some("10"),
             _ if flag(nbt, "Sitting") || flag(nbt, "OrderedToSit") => Some("10"),
-            ("minecraft:axolotl", _) if flag(nbt, "PlayingDead") => Some("1000"),
             _ => None,
         };
         if let Some(pose) = pose {
