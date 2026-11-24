@@ -12,7 +12,7 @@
   Jade.
 - "Leashed by" shows; the From Eye ray-trace option works; the Player List key is your own binding.
 - The config screens' buttons and sliders, mobs' hearts and Jade's own sprites draw again; they showed the
-  missing texture or nothing.
+  missing texture or nothing. Button labels are centred.
 - Hints show as toasts.
 - More entity details as in Jade: the copper golem's antenna, horse markings, fox and armadillo states, and
   whether a wither is powered.
