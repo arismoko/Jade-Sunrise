@@ -38,6 +38,7 @@ pub struct EntityData {
     pub icon: String,
     pub lines: Vec<String>,
     pub picked: bool,
+    pub projectile: bool,
     pub dist: f64,
     pub at: Instant,
 }
@@ -249,12 +250,48 @@ pub fn me(h: &dyn ClientHost) -> Option<(PlayerRef, Option<LivingRef>)> {
     Some((p, h.living(p.entity())))
 }
 
-/// The eye (the camera) and the view's direction.
+fn look_dir(yaw_deg: f32, pitch_deg: f32) -> [f64; 3] {
+    let (yaw, pitch) = (f64::from(yaw_deg).to_radians(), f64::from(pitch_deg).to_radians());
+    [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()]
+}
+
+fn face_vec(face: BlockFace) -> [i32; 3] {
+    match face {
+        BlockFace::Down => [0, -1, 0],
+        BlockFace::Up => [0, 1, 0],
+        BlockFace::North => [0, 0, -1],
+        BlockFace::South => [0, 0, 1],
+        BlockFace::West => [-1, 0, 0],
+        BlockFace::East => [1, 0, 0],
+        _ => [0, 1, 0],
+    }
+}
+
+/// The ray origin and direction: from `camera_entity`'s eyes in `eye` perspective mode, else from the camera.
 pub fn aim(h: &dyn ClientHost) -> Option<([f64; 3], [f64; 3])> {
+    if opt(h, "perspective_mode") == "eye"
+        && let Some(cam) = h.camera_entity()
+        && let Some(pos) = cam.eye_position(h)
+        && let Some([yaw, pitch]) = cam.rotation(h)
+    {
+        return Some((pos, look_dir(yaw, pitch)));
+    }
     let c = h.camera()?;
-    let (yaw, pitch) = (f64::from(c.yaw).to_radians(), f64::from(c.pitch).to_radians());
-    let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
-    Some((c.position, dir))
+    Some((c.position, look_dir(c.yaw, c.pitch)))
+}
+
+fn is_mining(h: &dyn ClientHost) -> bool {
+    matches!(me(h).and_then(|(p, _)| p.block_breaking(h)), Some(BlockBreakingState::Breaking { .. }))
+}
+
+fn skip_entity(h: &dyn ClientHost, data: &EntityData) -> bool {
+    if is_mining(h) && data.kind == "minecraft:item" {
+        return true;
+    }
+    if data.projectile && h.entity(data.id).and_then(|e| e.tick_count(h)).is_some_and(|t| t <= 10) {
+        return true;
+    }
+    false
 }
 
 fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -353,10 +390,21 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
     let level = level(h)?;
     let extra = num(h, "reach_distance").clamp(0.0, 20.0);
     let reach = me(h).and_then(|(_, l)| l?.attribute_value(h, "minecraft:block_interaction_range")).unwrap_or(4.5);
+    let eye_mode = opt(h, "perspective_mode") == "eye";
+    // RayTracing.rayTrace: in Camera perspective mode, extend reach by the camera-to-eye offset (e.g. third person).
+    let cam_offset = if eye_mode {
+        0.0
+    } else if let Some(entity_eye) = h.camera_entity().and_then(|e| e.eye_position(h)) {
+        let d2: f64 = (0..3).map(|i| (entity_eye[i] - eye[i]).powi(2)).sum();
+        if d2 > 1e-5 && d2 <= 1e8 { d2.sqrt() } else { 0.0 }
+    } else {
+        0.0
+    };
+    let total_reach = reach + extra + cam_offset;
     let mut block: Option<Seen> = None;
     let mut entity: Option<Seen> = None;
     match h.crosshair_target() {
-        Some(CrosshairTarget::Block { pos, state, hit }) if extra <= 0.0 => {
+        Some(CrosshairTarget::Block { pos, state, hit }) if extra <= 0.0 && cam_offset == 0.0 => {
             let p = [pos.x, pos.y, pos.z];
             if let Some(s) = h.block_state_string(state) {
                 let id = s.split('[').next().unwrap_or(&s).to_owned();
@@ -368,15 +416,26 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
         }
         _ => {}
     }
-    // Extended Reach: the block along the view past the hand's reach.
-    if extra > 0.0
-        && let Some(hit) = h.raycast((reach + extra) as f32)
-    {
-        let p = [hit.block_x, hit.block_y, hit.block_z];
-        let point = [hit.x, hit.y, hit.z];
-        if let Some((id, s)) = state_at(h, level, p) {
-            let face = face_of(point, p);
-            block = Some(Seen::Block { pos: p, block: id.clone(), real: id, state: s, hit: point, dist: dist(eye, point), face });
+    // Extended Reach, Camera perspective offset, or Eye perspective: clip along the chosen ray.
+    if extra > 0.0 || cam_offset > 0.0 || eye_mode {
+        let to = [eye[0] + dir[0] * total_reach, eye[1] + dir[1] * total_reach, eye[2] + dir[2] * total_reach];
+        match level.clip(h, eye, to, ClipBlock::Outline, ClipFluid::None) {
+            Some(hit) if !hit.miss => {
+                if let Some((id, s)) = state_at(h, level, hit.block) {
+                    block = Some(Seen::Block { pos: hit.block, block: id.clone(), real: id, state: s, hit: hit.location, dist: dist(eye, hit.location), face: face_vec(hit.face) });
+                }
+            }
+            None if extra > 0.0 => {
+                if let Some(hit) = h.raycast(total_reach as f32) {
+                    let p = [hit.block_x, hit.block_y, hit.block_z];
+                    let point = [hit.x, hit.y, hit.z];
+                    if let Some((id, s)) = state_at(h, level, p) {
+                        let face = face_of(point, p);
+                        block = Some(Seen::Block { pos: p, block: id.clone(), real: id, state: s, hit: point, dist: dist(eye, point), face });
+                    }
+                }
+            }
+            _ => {}
         }
     }
     let blocks_on = on(h, "display_blocks");
@@ -388,7 +447,7 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
     // RayTracing.rayTrace: fluids from outside them with Any (or Toggle Fluid), with Fallback only with no block.
     let mode = opt(h, "display_fluids");
     let any = mode == "any" || with(|c| c.liquids);
-    let fluid = if blocks_on && (any || (mode == "fallback" && block.is_none())) { fluid_hit(h, reach + extra, any) } else { None };
+    let fluid = if blocks_on && (any || (mode == "fallback" && block.is_none())) { fluid_hit(h, total_reach, any) } else { None };
     let bd = |b: &Option<Seen>| match b {
         Some(Seen::Block { dist, .. }) => *dist,
         _ => f64::INFINITY,
@@ -1040,7 +1099,7 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
         }
         Seen::Entity { id, .. } => {
             let data = with(|c| c.entity_data.clone()).filter(|d| d.id == *id && d.at.elapsed().as_millis() < 2000)?;
-            if ignored_entity(h, &data.kind) || (!on(h, "display_bosses") && matches!(data.kind.as_str(), "minecraft:ender_dragon" | "minecraft:wither")) {
+            if skip_entity(h, &data) || ignored_entity(h, &data.kind) || (!on(h, "display_bosses") && matches!(data.kind.as_str(), "minecraft:ender_dragon" | "minecraft:wither")) {
                 return None;
             }
             let title = if data.name.is_empty() { entity_name(h, &data.kind) } else { resolve(h, &data.name) };
@@ -1529,7 +1588,7 @@ pub fn draw_layer(h: &dyn ClientHost, d: &mut dyn DrawContext) {
     }
     // The server's pick (a dropped item, a falling block, a display, a mob past the hand's reach) when nearer.
     let seen = match (seen, with(|c| c.entity_data.clone())) {
-        (s, Some(d)) if d.picked && d.at.elapsed().as_millis() < 600 => {
+        (s, Some(d)) if d.picked && d.at.elapsed().as_millis() < 600 && !skip_entity(h, &d) => {
             let nearer = match &s {
                 Some(Seen::Block { dist, .. }) => d.dist < *dist,
                 Some(Seen::Entity { .. }) => false,

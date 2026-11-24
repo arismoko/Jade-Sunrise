@@ -227,12 +227,16 @@ pub fn from_server(data: &[u8]) {
     let head = it.next().unwrap_or("");
     if let Some(rest) = head.strip_prefix("E ") {
         let w: Vec<&str> = rest.split(' ').collect();
-        let [id, picked, dist, kind] = w.as_slice() else { return };
+        let (id, picked, dist, kind, projectile) = match w.as_slice() {
+            [id, picked, dist, kind] => (id, picked, dist, kind, false),
+            [id, picked, dist, kind, proj] => (id, picked, dist, kind, *proj == "1"),
+            _ => return,
+        };
         let (Ok(id), Ok(dist)) = (id.parse::<u32>(), dist.parse::<f64>()) else { return };
         let name = it.next().unwrap_or("").to_owned();
         let icon = it.next().unwrap_or("").to_owned();
         let lines: Vec<String> = it.take(256).map(str::to_owned).collect();
-        with(|c| c.entity_data = Some(EntityData { id, kind: (*kind).to_owned(), name, icon, lines, picked: *picked == "1", dist, at: Instant::now() }));
+        with(|c| c.entity_data = Some(EntityData { id, kind: (*kind).to_owned(), name, icon, lines, picked: *picked == "1", projectile, dist, at: Instant::now() }));
         return;
     }
     if let Some(rest) = head.strip_prefix("B ") {

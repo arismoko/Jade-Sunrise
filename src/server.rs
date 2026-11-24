@@ -252,6 +252,9 @@ fn pick(host: &mut dyn ServerHost, p: PlayerRef, level: LevelRef, extra: f64, bl
     let hits = level.ray_trace_entities(host, eye, to, 0.3, Some(me))?;
     let mut best: Option<(f64, EntityRef)> = None;
     for hit in hits {
+        if (host.projectile(hit.entity).is_some() || host.fishing_hook(hit.entity).is_some()) && hit.entity.tick_count(host).is_some_and(|t| t <= 10) {
+            continue;
+        }
         let Some(kind) = hit.entity.kind(host).map(|k| k.id(&*host).map(|n| n.as_str().to_owned()).unwrap_or_default()) else { continue };
         let display = matches!(kind.as_str(), "minecraft:block_display" | "minecraft:item_display");
         let special = display || matches!(kind.as_str(), "minecraft:item" | "minecraft:falling_block");
@@ -337,7 +340,8 @@ fn describe(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: LevelR
     for provider in api::registry(|r| r.server_entity.clone()) {
         provider(host, &req, e, &mut lines);
     }
-    let head = format!("E {} {} {d} {kind}\n{name}\n{icon}", e.id(), u8::from(picked));
+    let projectile = u8::from(host.projectile(e).is_some() || host.fishing_hook(e).is_some());
+    let head = format!("E {} {} {d} {kind} {projectile}\n{name}\n{icon}", e.id(), u8::from(picked));
     Some(lines_out(head, lines))
 }
 
