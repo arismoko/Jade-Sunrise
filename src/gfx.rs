@@ -331,7 +331,7 @@ impl Gfx<'_> {
         // ActiveTextCollector.acceptScrollingWithDefaultCenter: a label that fits is centred on the button,
         // `clamp(centerX, left + width / 2, right - width / 2)` in whole pixels.
         let (left, right) = ((x + 2.0) as i32, (x + w - 2.0) as i32);
-        let width = self.h.text_width(label) as i32;
+        let width = self.h.text_width(label);
         if width <= right - left {
             let centre = ((left + right) / 2).clamp(left + width / 2, right - width / 2);
             let top = ((y + y + h - 9.0) / 2.0 + 1.0).floor();
