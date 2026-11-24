@@ -118,18 +118,20 @@ pub fn tick(h: &mut dyn ClientHost) {
         opts::use_profile(h, &n.to_string());
         let _ = h.chat_line(Text::literal(format!("Jade profile #{n}")));
     }
-    // Jade.history()'s hints, once each: toast.jade.toggle_hint and toast.jade.tts_hint, in chat.
+    // Jade.history()'s hints, once each: toast.jade.toggle_hint and toast.jade.tts_hint.
     if let Some(which) = with(|c| c.hint.take()) {
-        let (flag, key_name, first, second) = if which == 0 {
-            ("hint_overlay_toggle", "show_overlay", tr(h, "toast.jade.toggle_hint.1", "Jade is now closed"), tr(h, "toast.jade.toggle_hint.2", "Press %s again to reopen"))
+        let (flag, key_name, kind, first, second) = if which == 0 {
+            ("hint_overlay_toggle", "show_overlay", "jade:toggle_hint", tr(h, "toast.jade.toggle_hint.1", "Jade is now closed"), tr(h, "toast.jade.toggle_hint.2", "Press %s again to reopen"))
         } else {
-            ("hint_narrator_toggle", "narrate", tr(h, "toast.jade.tts_hint.1", "Jade's narrator is now open"), tr(h, "toast.jade.tts_hint.2", "Press %s again to disable"))
+            ("hint_narrator_toggle", "narrate", "jade:tts_hint", tr(h, "toast.jade.tts_hint.1", "Jade's narrator is now open"), tr(h, "toast.jade.tts_hint.2", "Press %s again to disable"))
         };
         if opt(h, flag) != "shown" {
             opts::set(h, flag, "shown");
             let label = key_label(h, key_name);
-            let _ = h.chat_line(Text::literal(first));
-            let _ = h.chat_line(Text::literal(second.replace("%s", &label)));
+            let mut toast = ModToast::new(Text::literal(first));
+            toast.description = Some(Text::literal(second.replace("%s", &label)));
+            toast.kind = Identifier::parse(kind).ok();
+            let _ = h.add_toast(toast);
         }
     }
     if with(|c| std::mem::take(&mut c.open_config)) {
