@@ -45,8 +45,9 @@ Each of these waits on a piece of Sunrise's mod API, filed on Sunrise:
   every line shows. A sitting panda shows no sitting state (sunrise-org/sunrise#5499).
 - **Dropped items' tooltip lines.** The item's own tooltip lines aren't shown under a dropped item
   (sunrise-org/sunrise#5332).
-- **Picked items.** The icon of a block or entity comes from its plain item, so a banner's pattern, a pot's sherds or
-  a mob's spawn egg aren't shown (sunrise-org/sunrise#5289, #5495).
+- **Picked items.** The game's own pick result isn't readable, so the icon is worked out by the port: heads, pots,
+  banners, frames, vehicles and spawn eggs come out right, but a mod block or entity that picks a different item than
+  its plain one shows its plain item (sunrise-org/sunrise#5289, #5495).
 - **Mods screen.** Options › Mods' Config button doesn't open Jade's screens. Use the Open Config key or `/jadec config`
   (sunrise-org/sunrise#1217).
 - **Ignore lists.** "Edit ignore list in Files…" prints the files' paths in chat instead of opening the folder
@@ -63,7 +64,6 @@ These are not done yet in the port itself:
 - **Smaller things:**
   - a campfire's cook time is shown as text, not over the item;
   - plural and gender forms in translations always take "other", and right-to-left layout isn't supported;
-  - the ray trace doesn't skip new projectiles or dropped items while you mine;
   - the REI, Polydex and Tech Reborn energy compatibility and the debug plugin aren't ported. Recipe lookup works
     through JEI.
 
