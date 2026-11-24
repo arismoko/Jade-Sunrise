@@ -263,13 +263,15 @@ fn fluid_hit(h: &dyn ClientHost, reach: f64, from_outside: bool) -> Option<(f64,
     let (eye, dir) = aim(h)?;
     let level = level(h)?;
     let fluid_at = |p: [i32; 3]| -> Option<(String, String)> {
-        let (id, s) = state_at(h, level, p)?;
-        let f = match id.as_str() {
-            "minecraft:water" | "minecraft:lava" => id.clone(),
-            _ if s.contains("waterlogged=true") => "minecraft:water".to_owned(),
-            _ => return None,
-        };
-        Some((f, s))
+        let state = level.block_state(h, p)?;
+        let fs = h.state_fluid_state(state)?;
+        if fs.is_empty() {
+            return None;
+        }
+        let legacy = h.fluid_states().legacy_block(fs).unwrap_or(state);
+        let s = h.block_state_string(legacy)?;
+        let id = s.split('[').next().unwrap_or(&s).to_owned();
+        Some((id, s))
     };
     let mut pos = eye.map(|v| v.floor() as i32);
     if from_outside && fluid_at(pos).is_some() {
@@ -859,16 +861,9 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, lines: &mut V
                             lines.push(Line::text(format!("§8{}", trf(h, "config.jade.plugin_jade.registry_name.special.block_entity_type", "BlockEntity: %s", &[id]))));
                         }
                     }
-                    let flowing = prop(&state, "level").is_some_and(|l| l != "0");
-                    let fluid = match block.as_str() {
-                        "minecraft:water" if flowing => Some("minecraft:flowing_water"),
-                        "minecraft:lava" if flowing => Some("minecraft:flowing_lava"),
-                        "minecraft:water" => Some("minecraft:water"),
-                        "minecraft:lava" => Some("minecraft:lava"),
-                        _ if state.contains("waterlogged=true") => Some("minecraft:water"),
-                        _ => None,
-                    };
-                    if let Some(fluid) = fluid {
+                    if let Some(fs) = h.block_state_id(&state).and_then(|bs| h.state_fluid_state(bs)).filter(|fs| !fs.is_empty())
+                        && let Some(fluid) = fs.fluid.id(h)
+                    {
                         lines.push(Line::text(format!("§8{}", trf(h, "config.jade.plugin_jade.registry_name.special.fluid", "Fluid: %s", &[fluid]))));
                     }
                 }
@@ -1011,10 +1006,6 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
             let named = api::registry(|r| r.names.clone()).into_iter().find_map(|f| f(h, &target));
             match named {
                 Some((icon, title, ns)) => (Some(icon).filter(|i| gfx::item_key(h, i).is_some()), title, ns, None),
-                None if matches!(block.as_str(), "minecraft:water" | "minecraft:lava") => {
-                    let name = h.translate(&format!("block.{}", block.replace(':', "."))).unwrap_or_else(|| words(block.trim_start_matches("minecraft:")));
-                    (Some(format!("{block}_bucket")), name, "minecraft".to_owned(), None)
-                }
                 // PlayerHeadProvider: a head with an owner is named after them.
                 None if matches!(block.as_str(), "minecraft:player_head" | "minecraft:player_wall_head") && on(h, "player_head") => {
                     let title = match head_owner(h, *pos) {
@@ -1024,12 +1015,22 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
                     (Some("minecraft:player_head".to_owned()), title, "minecraft".to_owned(), None)
                 }
                 None => {
-                    // WaxedProvider.BlockComponent.getIcon.
-                    if on(h, "waxed") && block.ends_with("_sign") && block_entity_data(h, *pos).is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1)))) {
-                        badge = true;
+                    let item = block_item(h, block);
+                    if item.is_none()
+                        && let Some(fs) = h.block_state_id(state).and_then(|bs| h.state_fluid_state(bs)).filter(|fs| !fs.is_empty())
+                        && let Some(fluid_id) = fs.fluid.id(h)
+                    {
+                        let bucket = h.fluid_bucket(fluid_id).and_then(|k| k.id(h).map(str::to_owned));
+                        let ns = fluid_id.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
+                        (bucket, h.fluid_name(fluid_id), ns, None)
+                    } else {
+                        // WaxedProvider.BlockComponent.getIcon.
+                        if on(h, "waxed") && block.ends_with("_sign") && block_entity_data(h, *pos).is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1)))) {
+                            badge = true;
+                        }
+                        let ns = block.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
+                        (item, block_name(h, block), ns, None)
                     }
-                    let ns = block.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
-                    (block_item(h, block), block_name(h, block), ns, None)
                 }
             }
         }
