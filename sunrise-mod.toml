@@ -2,15 +2,15 @@ id = "jade"
 name = "Jade"
 version = "26.3.9"
 description = "Shows what you are looking at. A port of Jade (Snownee, CC BY-NC-SA 4.0) to Sunrise's mod API."
-authors = ["Sunrise port: Joeypc6", "Snownee"]
+authors = ["Sunrise port: Joeypc6", "Snownee", "arismoko"]
 api = "0.2"
 side = "both"
 capabilities = ["registries"]
 license = "CC-BY-NC-SA-4.0"
-license_url = "https://github.com/Joeypc6/Jade-Sunrise/blob/main/LICENSE"
+license_url = "https://github.com/arismoko/Jade-Sunrise/blob/sunrise/LICENSE"
 credits = "Sunrise port by Joeypc6, based on Jade by Snownee (CC BY-NC-SA 4.0)."
-homepage = "https://github.com/Joeypc6/Jade-Sunrise"
-issues = "https://github.com/Joeypc6/Jade-Sunrise/issues"
+homepage = "https://github.com/arismoko/Jade-Sunrise"
+issues = "https://github.com/arismoko/Jade-Sunrise/issues"
 
 [dependencies]
 # The commands menu (/<id>, assets/<id>/commands) is drawn by the shared guide, when installed.
@@ -18,6 +18,6 @@ guideme = { version = "^0.1", optional = true }
 
 [native]
 game = "26.3"
-# Pinned to Sunrise Dev 2026-11-24 (f8aa80e).
-sunrise = "f8aa80e4c40cf1a5d30e85d13937f3fcf06d8237"
+# Pinned to Sunrise Dev 2026-11-24 (3d34bbe).
+sunrise = "3d34bbe63d71bb24c098c1e4021ef866be12fe2d"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"

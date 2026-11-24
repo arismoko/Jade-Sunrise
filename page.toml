@@ -14,9 +14,9 @@ What it does:
 - `/jadec` client commands, `/jade show|hide` for operators, and the `jade:max_position_deviation` game rule.
 - In multiplayer the server answers only for blocks and entities in your reach, and shows a locked container as locked.
 """
-authors = ["Sunrise port: Joeypc6", "Snownee"]
-homepage = "https://github.com/Joeypc6/Jade-Sunrise"
-issues = "https://github.com/Joeypc6/Jade-Sunrise/issues"
+authors = ["Sunrise port: Joeypc6", "Snownee", "arismoko"]
+homepage = "https://github.com/arismoko/Jade-Sunrise"
+issues = "https://github.com/arismoko/Jade-Sunrise/issues"
 categories = ["utility"]
 
 [[screenshots]]
