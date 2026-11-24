@@ -1691,7 +1691,16 @@ pub fn item_tooltip(h: &dyn ClientHost, e: &mut ItemTooltipEvent<'_>) {
 pub fn spoken(b: &BuiltBox) -> String {
     b.lines
         .iter()
-        .map(|l| l.els.iter().filter_map(|e| if let El::Text(t) = e { Some(plain(t)) } else { None }).collect::<Vec<_>>().join(" "))
+        .map(|l| {
+            l.els
+                .iter()
+                .filter_map(|e| match e {
+                    El::Text(t) | El::Small(t) => Some(plain(t)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
         .filter(|t| !t.trim().is_empty())
         .collect::<Vec<_>>()
         .join(". ")

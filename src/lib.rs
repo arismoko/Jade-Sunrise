@@ -107,6 +107,10 @@ impl Hooks for Mod {
         opts::forget_player(event.player);
     }
 
+    fn mob_effect_added(&self, host: &mut dyn ServerHost, event: &mut MobEffectAddedEvent) {
+        entities::effect_added(host, event.entity, event.effect, event.amplifier);
+    }
+
     fn screen_render_post(&self, host: &dyn ClientHost, event: &mut ScreenRenderPostEvent<'_>) {
         config_ui::draw(host, event.draw, event.screen);
     }

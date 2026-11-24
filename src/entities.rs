@@ -5,9 +5,80 @@
 //! AccessibilityPlugin's from the entity's saved data (`Entity.saveWithoutId`, what `/data get entity` shows) and the
 //! living, merchant and attribute reads. Text the client must translate is written as markers.
 use crate::api::{El, Line, Request, entity_name, item_name, tr};
-use crate::opts::{num, on, opt, roman, seconds_marker, tick_duration, trim2};
+use crate::opts::{num, on, opt, seconds_marker, tick_duration, trim2};
 use crate::server::storage;
 use mod_api::*;
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static EFFECT_SEQ: AtomicU64 = AtomicU64::new(1);
+/// Per-(entity id, effect id): `(update_seq, last_duration, last_amplifier)` for `StatusEffectsProvider` ordering.
+static EFFECT_TIMES: Mutex<Option<HashMap<(u32, String), (u64, i32, i32)>>> = Mutex::new(None);
+
+fn next_effect_seq() -> u64 {
+    EFFECT_SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
+/// `mob_effect_added`: record when an effect was added or refreshed on an entity so newest effects sort first.
+pub fn effect_added(host: &dyn Host, entity: Option<i32>, effect: EffectKey, amplifier: i32) {
+    let Some(id) = entity.and_then(|i| u32::try_from(i).ok()) else { return };
+    let Some(eff_id) = effect.id(host) else { return };
+    let mut g = EFFECT_TIMES.lock().unwrap_or_else(|e| e.into_inner());
+    let map = g.get_or_insert_with(HashMap::new);
+    if map.len() > 4096 {
+        map.clear();
+    }
+    let seq = next_effect_seq();
+    map.entry((id, eff_id.to_owned())).and_modify(|e| { e.0 = seq; e.2 = amplifier; }).or_insert((seq, 0, amplifier));
+}
+
+fn effect_order(entity_id: u32, effects: &[(ActiveEffect, String)]) -> Vec<(u64, usize)> {
+    let mut g = EFFECT_TIMES.lock().unwrap_or_else(|e| e.into_inner());
+    let map = g.get_or_insert_with(HashMap::new);
+    if map.len() > 4096 {
+        map.clear();
+    }
+    let active: HashSet<&str> = effects.iter().map(|(_, id)| id.as_str()).collect();
+    map.retain(|(eid, eff_id), _| *eid != entity_id || active.contains(eff_id.as_str()));
+    let mut out = Vec::with_capacity(effects.len());
+    for (idx, (eff, id)) in effects.iter().enumerate() {
+        let key = (entity_id, id.clone());
+        let seq = match map.get_mut(&key) {
+            Some(entry) => {
+                if eff.amplifier != entry.2 || (eff.duration < 0 && entry.1 >= 0) || (eff.duration > entry.1 && entry.1 > 0) {
+                    entry.0 = next_effect_seq();
+                }
+                entry.1 = eff.duration;
+                entry.2 = eff.amplifier;
+                entry.0
+            }
+            None => {
+                let seq = next_effect_seq();
+                map.insert(key, (seq, eff.duration, eff.amplifier));
+                seq
+            }
+        };
+        out.push((seq, idx));
+    }
+    out.sort_by(|&(seq_a, ia), &(seq_b, ib)| {
+        let (a, ida) = &effects[ia];
+        let (b, idb) = &effects[ib];
+        seq_b
+            .cmp(&seq_a)
+            .then_with(|| {
+                // MobEffectInstance.compareTo tie-breaker: long/infinite duration, then ambient, then id.
+                let long = |d: i32| d < 0 || d > 32147;
+                let dur = |d: i32| if d < 0 { i32::MAX } else { d };
+                match (long(a.duration), long(b.duration)) {
+                    (true, true) => a.ambient.cmp(&b.ambient).then_with(|| ida.cmp(idb)),
+                    (false, false) if a.ambient == b.ambient => dur(b.duration).cmp(&dur(a.duration)).then_with(|| ida.cmp(idb)),
+                    _ => a.ambient.cmp(&b.ambient).then_with(|| dur(b.duration).cmp(&dur(a.duration))).then_with(|| ida.cmp(idb)),
+                }
+            })
+    });
+    out
+}
 
 fn cget<'a>(c: &'a Compound, key: &str) -> Option<&'a Tag> {
     c.iter().find(|(k, _)| k.to_string_lossy() == key).map(|(_, v)| v)
@@ -233,17 +304,30 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
         let id = item.id(host).unwrap_or_default();
         lines.push(Line::new().with(Line::small_with(id, comp)).with(El::Text(format!("§f{}", item_name(id)))));
     }
-    // StatusEffectsProvider: each effect and its time, by category (good green, bad red).
+    // StatusEffectsProvider: visible effects sorted by update time, coloured by category, 0.75 scale when > 2.
     if on(host, "potion_effects")
         && let Some(l) = living
     {
         let limit = num(host, "effects_limit").clamp(1.0, 99.0) as usize;
-        for eff in l.effects(host).unwrap_or_default().into_iter().take(limit) {
-            let id = eff.id.id(host).unwrap_or_default();
-            let (ns, path) = id.split_once(':').unwrap_or(("minecraft", id));
+        let visible: Vec<(ActiveEffect, String)> = l
+            .effects(host)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|eff| eff.visible)
+            .map(|eff| {
+                let id = eff.id.id(host).unwrap_or_default().to_owned();
+                (eff, id)
+            })
+            .collect();
+        let ordered = effect_order(e.id(), &visible);
+        let shown: Vec<&(ActiveEffect, String)> = ordered.into_iter().take(limit).map(|(_, i)| &visible[i]).collect();
+        let small = shown.len() > 2;
+        for (eff, id) in shown {
+            let (ns, path) = id.split_once(':').unwrap_or(("minecraft", id.as_str()));
             let mut name = tr(&format!("effect.{ns}.{path}"), path, &[]);
-            if (1..=9).contains(&eff.amplifier) {
-                name = format!("{name} {}", tr(&format!("potion.potency.{}", eff.amplifier), &roman(eff.amplifier + 1), &[]));
+            if eff.amplifier >= 1 {
+                let lvl = eff.amplifier + 1;
+                name = format!("{name} {}", tr(&format!("enchantment.level.{lvl}"), &lvl.to_string(), &[]));
             }
             let time = if eff.duration < 0 { tr("effect.duration.infinite", "∞", &[]) } else { tick_duration(i64::from(eff.duration)) };
             // MobEffect.getCategory: IThemeHelper's success, danger and info colours.
@@ -252,7 +336,8 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
                 Some(EffectCategory::Harmful) => "§c",
                 _ => "§f",
             };
-            lines.push(Line::text(format!("{color}{}", tr("jade.potion", "%s (%s)", &[&name, &time]))));
+            let text = format!("{color}{}", tr("jade.potion", "%s (%s)", &[&name, &time]));
+            lines.push(if small { Line::new().with(El::Small(text)) } else { Line::text(text) });
         }
     }
     // AnimalOwnerProvider: a tamed animal's owner (a player in the world, or the uuid).

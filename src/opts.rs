@@ -760,7 +760,3 @@ pub fn tick_duration(ticks: i64) -> String {
     let s = ticks / 20;
     if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60) } else { format!("{}:{:02}", s / 60, s % 60) }
 }
-
-pub fn roman(n: i32) -> String {
-    ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"].get((n - 1).max(0) as usize).map_or_else(|| n.to_string(), |r| (*r).to_owned())
-}
