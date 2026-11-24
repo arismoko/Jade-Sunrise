@@ -221,15 +221,26 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
                 other => usize::try_from(int(Some(other))?).ok().and_then(|i| DYES.get(i).copied()).map(str::to_owned),
             }
         };
-        let tamed = living.and_then(|l| l.is_tamed(host)).unwrap_or(false) || cget(nbt, "Owner").is_some();
         let color = match kind {
             "minecraft:sheep" | "minecraft:shulker" => dye(cget(nbt, "Color")),
-            "minecraft:wolf" | "minecraft:cat" if tamed => dye(cget(nbt, "CollarColor")),
-            "minecraft:tropical_fish" => int(cget(nbt, "Variant")).and_then(|v| DYES.get(((v >> 16) & 15) as usize).copied()).map(str::to_owned),
             _ => None,
         };
         if let Some(color) = color {
-            let english = format!("{} {{0}}", color.split('_').map(|w| w[..1].to_uppercase() + &w[1..]).collect::<Vec<_>>().join(" "));
+            let english = format!(
+                "{} {{0}}",
+                color
+                    .split('_')
+                    .filter(|w| !w.is_empty())
+                    .map(|w| {
+                        let mut chars = w.chars();
+                        match chars.next() {
+                            Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                            None => String::new(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
             wrap(tr(&format!("jade.access.entity.{color}"), &english, &[]));
         }
     }
@@ -241,7 +252,7 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
     // EntityVariantProvider: what a mob's variant is, plus horse markings.
     if access(host, "access_variant") {
         let variant = match kind {
-            "minecraft:painting" => None,
+            "minecraft:painting" | "minecraft:salmon" | "minecraft:tropical_fish" => None,
             "minecraft:horse" => {
                 const COATS: [&str; 7] = ["white", "creamy", "chestnut", "brown", "black", "gray", "dark_brown"];
                 int(cget(nbt, "Variant")).and_then(|v| COATS.get((v & 0xFF) as usize).copied()).map(str::to_owned)
@@ -258,12 +269,7 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
                 const AXOLOTLS: [&str; 5] = ["lucy", "wild", "gold", "cyan", "blue"];
                 int(cget(nbt, "Variant")).and_then(|v| AXOLOTLS.get(v as usize).copied()).map(str::to_owned)
             }
-            "minecraft:tropical_fish" => {
-                const PATTERNS: [&str; 12] = ["kob", "sunstreak", "snooper", "dasher", "brinely", "spotty", "flopper", "stripey", "glitter", "blockfish", "betty", "clayfish"];
-                int(cget(nbt, "Variant")).and_then(|v| PATTERNS.get((((v & 1) * 6) + ((v >> 8) & 0xFF)) as usize).copied()).map(str::to_owned)
-            }
             "minecraft:fox" | "minecraft:mooshroom" => string(cget(nbt, "Type")),
-            "minecraft:salmon" => string(cget(nbt, "type")),
             "minecraft:rabbit" => match int(cget(nbt, "RabbitType")) {
                 Some(0) => Some("brown".to_owned()),
                 Some(1) => Some("white".to_owned()),
@@ -311,7 +317,6 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
             ("minecraft:fox", _) if flag(nbt, "Sleeping") => Some("2"),
             ("minecraft:fox", _) if flag(nbt, "Sitting") => Some("10"),
             ("minecraft:camel" | "minecraft:camel_husk", _) if int(cget(nbt, "LastPoseTick")).is_some_and(|t| t < 0) => Some("10"),
-            ("minecraft:panda", _) if flag(nbt, "Sitting") || int(cget(nbt, "SitAmount")).is_some_and(|v| v > 0) => Some("10"),
             (_, Some("sleeping")) => Some("2"),
             (_, Some("swimming")) => Some("3"),
             (_, Some("crouching")) => Some("5"),

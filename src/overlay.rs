@@ -422,11 +422,13 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
         let to = [eye[0] + dir[0] * total_reach, eye[1] + dir[1] * total_reach, eye[2] + dir[2] * total_reach];
         match level.clip(h, eye, to, ClipBlock::Outline, ClipFluid::None) {
             Some(hit) if !hit.miss => {
-                if let Some((id, s)) = state_at(h, level, hit.block) {
-                    block = Some(Seen::Block { pos: hit.block, block: id.clone(), real: id, state: s, hit: hit.location, dist: dist(eye, hit.location), face: face_vec(hit.face) });
-                }
+                block = state_at(h, level, hit.block).map(|(id, s)| Seen::Block { pos: hit.block, block: id.clone(), real: id, state: s, hit: hit.location, dist: dist(eye, hit.location), face: face_vec(hit.face) });
             }
-            None if extra > 0.0 => {
+            Some(_) => {
+                block = None;
+            }
+            // LevelRef::clip returns None on blocks with dynamic shapes (sunrise-org/sunrise#5315).
+            None if !eye_mode || extra > 0.0 => {
                 if let Some(hit) = h.raycast(total_reach as f32) {
                     let p = [hit.block_x, hit.block_y, hit.block_z];
                     let point = [hit.x, hit.y, hit.z];
@@ -436,7 +438,7 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
                     }
                 }
             }
-            _ => {}
+            None => {}
         }
     }
     let blocks_on = on(h, "display_blocks");
@@ -1112,7 +1114,12 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
                     {
                         let bucket = h.fluid_bucket(fluid_id).and_then(|k| k.id(h).map(str::to_owned));
                         let ns = fluid_id.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
-                        (bucket, None, h.fluid_name(fluid_id), ns, None)
+                        let name = h
+                            .fluid_states()
+                            .type_properties(fs.fluid)
+                            .and_then(|p| h.translate(&p.description_id))
+                            .unwrap_or_else(|| block_name(h, block));
+                        (bucket, None, name, ns, None)
                     } else {
                         // WaxedProvider.BlockComponent.getIcon.
                         if on(h, "waxed") && block.ends_with("_sign") && block_entity_data(h, *pos).is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1)))) {
