@@ -12,9 +12,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+type EffectTimeMap = HashMap<(u32, String), (u64, i32, i32)>;
+
 static EFFECT_SEQ: AtomicU64 = AtomicU64::new(1);
 /// Per-(entity id, effect id): `(update_seq, last_duration, last_amplifier)` for `StatusEffectsProvider` ordering.
-static EFFECT_TIMES: Mutex<Option<HashMap<(u32, String), (u64, i32, i32)>>> = Mutex::new(None);
+static EFFECT_TIMES: Mutex<Option<EffectTimeMap>> = Mutex::new(None);
 
 fn next_effect_seq() -> u64 {
     EFFECT_SEQ.fetch_add(1, Ordering::Relaxed)
@@ -68,7 +70,7 @@ fn effect_order(entity_id: u32, effects: &[(ActiveEffect, String)]) -> Vec<(u64,
             .cmp(&seq_a)
             .then_with(|| {
                 // MobEffectInstance.compareTo tie-breaker: long/infinite duration, then ambient, then id.
-                let long = |d: i32| d < 0 || d > 32147;
+                let long = |d: i32| !(0..=32147).contains(&d);
                 let dur = |d: i32| if d < 0 { i32::MAX } else { d };
                 match (long(a.duration), long(b.duration)) {
                     (true, true) => a.ambient.cmp(&b.ambient).then_with(|| ida.cmp(idb)),

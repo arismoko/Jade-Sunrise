@@ -134,7 +134,7 @@ pub(crate) fn decode_components(hex: &str) -> Option<Compound> {
         return None;
     }
     let mut bytes = Vec::with_capacity(hex.len() / 2);
-    for pair in hex.as_bytes().chunks_exact(2) {
+    for pair in hex.as_bytes().as_chunks::<2>().0 {
         let s = std::str::from_utf8(pair).ok()?;
         bytes.push(u8::from_str_radix(s, 16).ok()?);
     }
@@ -475,4 +475,28 @@ pub(crate) fn hidden_storage(block: &str) -> [bool; 3] {
         }
         out
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_round_trip_new_elements() {
+        let mut comp = Compound::new();
+        comp.insert(JavaString::from("minecraft:damage"), Tag::Int(7));
+        let line = Line::new()
+            .with(El::Stack { id: "minecraft:diamond_pickaxe".into(), count: 1, small: true, components: comp.clone() })
+            .with(El::StackIcon { id: "minecraft:player_head".into(), components: comp.clone() })
+            .with(El::Fluid("minecraft:water".into()))
+            .with(El::FluidBar { fluid: "minecraft:lava".into(), frac: 0.5, text: "Lava 500mB".into() })
+            .with(El::SpecialId("Painting: minecraft:kebab".into()));
+        let decoded = decode(&encode(&line));
+        assert_eq!(decoded.els.len(), 5);
+        assert!(matches!(&decoded.els[0], El::Stack { id, count: 1, small: true, components } if id == "minecraft:diamond_pickaxe" && components == &comp));
+        assert!(matches!(&decoded.els[1], El::StackIcon { id, components } if id == "minecraft:player_head" && components == &comp));
+        assert!(matches!(&decoded.els[2], El::Fluid(f) if f == "minecraft:water"));
+        assert!(matches!(&decoded.els[3], El::FluidBar { fluid, frac, text } if fluid == "minecraft:lava" && (*frac - 0.5).abs() < 1e-6 && text == "Lava 500mB"));
+        assert!(matches!(&decoded.els[4], El::SpecialId(s) if s == "Painting: minecraft:kebab"));
+    }
 }
