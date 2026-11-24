@@ -843,7 +843,7 @@ fn head_owner(h: &dyn ClientHost, pos: [i32; 3]) -> Option<String> {
 
 /// The information options: BlockFaceProvider, CoordinatesProvider, DistanceProvider, BlockStatesProvider,
 /// BlockPropertiesProvider, RegistryNameProvider.
-fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, lines: &mut Vec<Line>) {
+fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: &[String], lines: &mut Vec<Line>) {
     let (eye, _) = aim(h).unwrap_or(([0.0; 3], [0.0; 3]));
     if let Seen::Block { face, .. } = seen
         && on(h, "block_face")
@@ -899,9 +899,6 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, lines: &mut V
                 if let Some(r) = f.explosion_resistance {
                     lines.push(Line::text(trf(h, "jade.block_explosion_resistance", "Explosion resistance: %s", &[&format!("§f{}", trim2(f64::from(r)))])));
                 }
-                if let Some(fr) = f.friction {
-                    lines.push(Line::text(format!("Friction: §f{}", trim2(f64::from(fr)))));
-                }
             }
             if show_id {
                 lines.push(Line::text(format!("§8{block}")));
@@ -927,6 +924,11 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, lines: &mut V
         Seen::Entity { .. } => {
             if show_id && let Some(kind) = kind {
                 lines.push(Line::text(format!("§8{kind}")));
+                if on(h, "registry_special") {
+                    for s in special_ids {
+                        lines.push(Line::text(format!("§8{s}")));
+                    }
+                }
             }
         }
     }
@@ -953,7 +955,7 @@ fn block_icon_components(h: &dyn ClientHost, pos: [i32; 3], block: &str) -> Opti
 }
 
 /// What a server line says about the box rather than in it: the icon, the title's pattern and the mob's stats.
-fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option<String>, icon_components: &mut Option<Compound>, badge: &mut bool) {
+fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option<String>, icon_components: &mut Option<Compound>, badge: &mut bool, special_ids: &mut Vec<String>) {
     let mut titles: Vec<String> = Vec::new();
     let mut stats = None;
     let mut any = false;
@@ -983,6 +985,11 @@ fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option
             }
             El::Stats { absorb, armor } => {
                 stats = Some((*absorb, *armor));
+                any = true;
+                false
+            }
+            El::SpecialId(t) => {
+                special_ids.push(t.clone());
                 any = true;
                 false
             }
@@ -1192,13 +1199,14 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
     for l in &mut lines {
         for e in &mut l.els {
             match e {
-                El::Text(t) | El::Small(t) | El::Mark(t) | El::Title(t) => *t = resolve(h, t),
+                El::Text(t) | El::Small(t) | El::Mark(t) | El::Title(t) | El::SpecialId(t) => *t = resolve(h, t),
                 El::Bar { text, .. } | El::FluidBar { text, .. } => *text = resolve(h, text),
                 _ => {}
             }
         }
     }
-    apply_directives(h, &mut lines, &mut icon, &mut icon_components, &mut badge);
+    let mut special_ids = Vec::new();
+    apply_directives(h, &mut lines, &mut icon, &mut icon_components, &mut badge, &mut special_ids);
     // IThemeHelper.title: the title in the theme's colour.
     if on(h, "object_name")
         && let Some(El::Text(text)) = lines.first_mut().and_then(|l| l.els.first_mut())
@@ -1212,7 +1220,7 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
         sneaky = lines.len() > 1;
         lines.truncate(1);
     }
-    info_lines(h, seen, kind.as_deref(), &mut lines);
+    info_lines(h, seen, kind.as_deref(), &special_ids, &mut lines);
     if on(h, "mod_name") {
         let text = format!("{}{}", theme.mod_code, mod_name(h, &ns));
         lines.push(if on(h, "mod_name_smaller") { Line::new().with(El::Small(text)) } else { Line::text(text) });
@@ -1277,7 +1285,7 @@ fn size(h: &dyn ClientHost, e: &El) -> (f32, f32) {
         }
         El::Space(w) => (*w, 0.0),
         El::Energy => (10.0, 9.0),
-        El::Mark(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } => (0.0, 0.0),
+        El::Mark(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } | El::SpecialId(_) => (0.0, 0.0),
     }
 }
 
@@ -1394,7 +1402,7 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
         El::Energy => {
             g.sprite(&theme.sprite("jade:energy"), [0.0, 0.0, 16.0, 16.0], [x, y, 9.0, 9.0], 0xFFFF_FFFF);
         }
-        El::Space(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } => {}
+        El::Space(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } | El::SpecialId(_) => {}
     }
 }
 

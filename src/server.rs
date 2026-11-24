@@ -394,7 +394,7 @@ pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: im
     let extra = merged.len().saturating_sub(amount);
     merged.truncate(amount);
     let threshold = num(host, "storage_names") as usize;
-    if on(host, "always_list_mode") || merged.len() < threshold {
+    if merged.len() < threshold {
         // ItemStorageProvider.Client.append: "<count>× <name>".
         for (id, n, comp) in merged {
             let count = human(i64::from(n), "");
@@ -667,12 +667,17 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
                 lines.push(Line::text(tr("jade.beehive.bees", "Bees: %s", &[&format!("§f{}", tr("jade.fraction", "%d / %d", &[&bees.to_string(), "3"]))])));
             }
         }
-        // CommandBlockProvider: its command, to operators only (commands can hold anything).
+        // CommandBlockProvider: its command (truncated at 40 chars as Java Jade does), to operators only.
         "minecraft:command_block" => {
             if on(host, "command_block") && op
                 && let Some(cmd) = string(cget(&data, "Command")).filter(|c| !c.is_empty())
             {
-                lines.push(Line::text(format!("§f{cmd}")));
+                let shown = if cmd.chars().count() > 40 {
+                    format!("{}...", cmd.chars().take(37).collect::<String>())
+                } else {
+                    cmd
+                };
+                lines.push(Line::text(format!("§f{shown}")));
             }
         }
         // MobSpawnerProvider: the title names what it spawns.

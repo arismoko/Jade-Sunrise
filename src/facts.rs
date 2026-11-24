@@ -1,6 +1,6 @@
 //! The block facts Jade's tooltips read, asked of the game at runtime (no vanilla data ships with the mod):
 //!
-//! - hardness, `requiresCorrectToolForDrops`, explosion resistance and friction through `host.block_states()`, read
+//! - hardness, `requiresCorrectToolForDrops` and explosion resistance through `host.block_states()`, read
 //!   once per block (its default state, as Java's `BlockBehaviour.Properties` are per block) and kept until the player
 //!   leaves the world;
 //! - the blocks shears harvest (`LootTableMineableCollector`): the server reads its own loot tables as they load
@@ -24,8 +24,6 @@ pub(crate) struct Fact {
     pub requires_tool: bool,
     /// `Block.getExplosionResistance()`.
     pub explosion_resistance: Option<f32>,
-    /// `Block.getFriction()`.
-    pub friction: Option<f32>,
 }
 
 thread_local! {
@@ -45,7 +43,6 @@ pub(crate) fn fact(h: &dyn Host, block: &str) -> Option<Fact> {
         hardness: states.destroy_speed(state)?,
         requires_tool: states.requires_correct_tool(state).unwrap_or(false),
         explosion_resistance: states.explosion_resistance(state),
-        friction: states.friction(state),
     };
     FACTS.with_borrow_mut(|m| m.insert(block.to_owned(), f));
     Some(f)

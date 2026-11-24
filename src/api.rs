@@ -56,6 +56,8 @@ pub enum El {
     Title(String),
     /// Not drawn: EntityHealthAndArmorProvider's absorption and armour from the server.
     Stats { absorb: f32, armor: f32 },
+    /// Not drawn: RegistryNameProvider.ForEntity special registry line (gated on `registry_name` + `registry_special`).
+    SpecialId(String),
 }
 
 /// One line of the box: its elements left to right.
@@ -168,6 +170,7 @@ pub fn encode(line: &Line) -> String {
             El::Badge => format!("{CMD}W"),
             El::Title(t) => format!("{CMD}T {}", clean(t)),
             El::Stats { absorb, armor } => format!("{CMD}S {absorb} {armor}"),
+            El::SpecialId(t) => format!("{CMD}R {}", clean(t)),
             El::Item { id, count, small } => format!("{CMD}i {id} {count} {}", u8::from(*small)),
             El::Stack { id, count, small, components } => match encode_components(components) {
                 Some(hex) => format!("{CMD}j {id} {count} {} {hex}", u8::from(*small)),
@@ -236,6 +239,7 @@ pub fn decode(s: &str) -> Line {
             Some("W") => line.els.push(El::Badge),
             Some("T") => line.els.push(El::Title(rest())),
             Some("S") => line.els.push(El::Stats { absorb: f(1), armor: f(2) }),
+            Some("R") => line.els.push(El::SpecialId(rest())),
             _ => {}
         }
     }

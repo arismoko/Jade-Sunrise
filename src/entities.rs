@@ -530,17 +530,15 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
                 lines.push(Line::text(format!("§f{}", item_name(&id))));
             }
         }
-        // PaintingProvider: the variant's title (yellow) and author (grey).
+        // PaintingProvider: the variant's title (yellow) and author (grey); RegistryNameProvider.ForEntity: variant id.
         "minecraft:painting" => {
-            if on(host, "painting")
-                && let Some(v) = string(cget(nbt, "variant"))
-            {
-                let (ns, path) = v.split_once(':').unwrap_or(("minecraft", &v));
-                lines.push(Line::text(format!("§e{}", tr(&format!("painting.{ns}.{path}.title"), "", &[]))));
-                lines.push(Line::text(format!("§7{}", tr(&format!("painting.{ns}.{path}.author"), "", &[]))));
-                if on(host, "registry_special") {
-                    lines.push(Line::text(format!("§8{}", tr("config.jade.plugin_jade.registry_name.special.painting", "Painting: %s", &[&v]))));
+            if let Some(v) = string(cget(nbt, "variant")) {
+                if on(host, "painting") {
+                    let (ns, path) = v.split_once(':').unwrap_or(("minecraft", &v));
+                    lines.push(Line::text(format!("§e{}", tr(&format!("painting.{ns}.{path}.title"), "", &[]))));
+                    lines.push(Line::text(format!("§7{}", tr(&format!("painting.{ns}.{path}.author"), "", &[]))));
                 }
+                lines.push(Line::new().with(El::SpecialId(tr("config.jade.plugin_jade.registry_name.special.painting", "Painting: %s", &[&v]))));
             }
         }
         // ArmorStandProvider: each worn or held item, small, with its name.
