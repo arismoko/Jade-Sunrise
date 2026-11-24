@@ -234,9 +234,13 @@ pub fn from_server(data: &[u8]) {
         };
         let (Ok(id), Ok(dist)) = (id.parse::<u32>(), dist.parse::<f64>()) else { return };
         let name = it.next().unwrap_or("").to_owned();
-        let icon = it.next().unwrap_or("").to_owned();
+        let icon_raw = it.next().unwrap_or("");
+        let (icon, icon_components) = match icon_raw.split_once(' ') {
+            Some((id, hex)) => (id.to_owned(), crate::api::decode_components(hex)),
+            None => (icon_raw.to_owned(), None),
+        };
         let lines: Vec<String> = it.take(256).map(str::to_owned).collect();
-        with(|c| c.entity_data = Some(EntityData { id, kind: (*kind).to_owned(), name, icon, lines, picked: *picked == "1", projectile, dist, at: Instant::now() }));
+        with(|c| c.entity_data = Some(EntityData { id, kind: (*kind).to_owned(), name, icon, icon_components, lines, picked: *picked == "1", projectile, dist, at: Instant::now() }));
         return;
     }
     if let Some(rest) = head.strip_prefix("B ") {

@@ -91,19 +91,26 @@ fn string(t: Option<&Tag>) -> Option<String> {
     }
 }
 
-/// An item stack's id and count as saved (`{id, count}`).
-fn stack_of(t: &Tag) -> Option<(String, u32)> {
+/// An item stack's id, count and optional component patch as saved (`{id, count, components}`).
+fn stack_of(t: &Tag) -> Option<(String, u32, Option<Compound>)> {
     let id = string(tget(t, "id"))?;
     let count = int(tget(t, "count")).or_else(|| int(tget(t, "Count"))).unwrap_or(1).max(0) as u32;
-    (id != "minecraft:air" && count > 0).then_some((id, count))
+    if id == "minecraft:air" || count == 0 {
+        return None;
+    }
+    let components = match tget(t, "components") {
+        Some(Tag::Compound(c)) if !c.is_empty() => Some(c.clone()),
+        _ => None,
+    };
+    Some((id, count, components))
 }
 
-/// A saved `Items` list: each stack with its slot.
-fn items_of(c: &Compound, key: &str) -> Vec<(i64, String, u32)> {
+/// A saved `Items` list: each stack with its slot and optional component patch.
+fn items_of(c: &Compound, key: &str) -> Vec<(i64, String, u32, Option<Compound>)> {
     let Some(Tag::List(list)) = cget(c, key) else { return Vec::new() };
     list.iter().enumerate().filter_map(|(i, t)| {
-        let (id, n) = stack_of(t)?;
-        Some((int(tget(t, "Slot")).unwrap_or(i as i64), id, n))
+        let (id, n, comp) = stack_of(t)?;
+        Some((int(tget(t, "Slot")).unwrap_or(i as i64), id, n, comp))
     }).collect()
 }
 
@@ -322,16 +329,16 @@ fn describe(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: LevelR
         e.name(host).unwrap_or_default().replace('\n', " ")
     } else if kind == "minecraft:item" {
         // ItemEntity's name is its stack's.
-        cget(&nbt, "Item").and_then(stack_of).map(|(id, _)| api::item_name(&id)).unwrap_or_default()
+        cget(&nbt, "Item").and_then(stack_of).map(|(id, _, _)| api::item_name(&id)).unwrap_or_default()
     } else {
         String::new()
     };
     // BlockDisplayProvider and ItemDisplayProvider: what a display shows, through the displays API.
     let shown = host.display(e).and_then(|d| match d.item(host) {
-        Some(stack) => Some(stack.item().id(host).unwrap_or_default().to_owned()),
-        None => d.block_state(host).and_then(|s| host.block_item(s.block())).map(|i| i.id(host).unwrap_or_default().to_owned()),
+        Some(stack) => Some((stack.item().id(host).unwrap_or_default().to_owned(), api::stack_components(&stack))),
+        None => d.block_state(host).and_then(|s| host.block_item(s.block())).map(|i| (i.id(host).unwrap_or_default().to_owned(), None)),
     });
-    let icon = shown.filter(|id| id != "minecraft:air").unwrap_or_else(|| entity_icon(host, &kind, &nbt));
+    let (icon, icon_comp) = shown.filter(|(id, _)| id != "minecraft:air").unwrap_or_else(|| entity_icon(host, &kind, &nbt));
     let dimension = p.dimension(host).map(|d| d.to_string()).unwrap_or_default();
     let pos = e.block_position(host).unwrap_or([0; 3]);
     let req = Request { player, dimension, pos, block: String::new(), entity: Some(e.id()), details, hit: None };
@@ -340,40 +347,44 @@ fn describe(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: LevelR
     for provider in api::registry(|r| r.server_entity.clone()) {
         provider(host, &req, e, &mut lines);
     }
+    let icon_line = match icon_comp.as_ref().and_then(api::encode_components) {
+        Some(hex) if !icon.is_empty() => format!("{icon} {hex}"),
+        _ => icon,
+    };
     let projectile = u8::from(host.projectile(e).is_some() || host.fishing_hook(e).is_some());
-    let head = format!("E {} {} {d} {kind} {projectile}\n{name}\n{icon}", e.id(), u8::from(picked));
+    let head = format!("E {} {} {d} {kind} {projectile}\n{name}\n{icon_line}", e.id(), u8::from(picked));
     Some(lines_out(head, lines))
 }
 
 /// Entity.getPickResult as the icon: a mob's spawn egg, the framed item, the vehicle's item, a dropped item's own.
-fn entity_icon(host: &dyn Host, kind: &str, nbt: &Compound) -> String {
-    let item_of = |key: &str| cget(nbt, key).and_then(stack_of).map(|(id, _)| id);
+fn entity_icon(host: &dyn Host, kind: &str, nbt: &Compound) -> (String, Option<Compound>) {
+    let item_of = |key: &str| cget(nbt, key).and_then(stack_of).map(|(id, _, comp)| (id, comp));
     match kind {
         "minecraft:item" => item_of("Item").unwrap_or_default(),
-        "minecraft:item_frame" | "minecraft:glow_item_frame" => item_of("Item").unwrap_or_else(|| kind.to_owned()),
+        "minecraft:item_frame" | "minecraft:glow_item_frame" => item_of("Item").unwrap_or_else(|| (kind.to_owned(), None)),
         "minecraft:item_display" => item_of("item").unwrap_or_default(),
-        "minecraft:block_display" => cget(nbt, "block_state").and_then(|t| string(tget(t, "Name"))).unwrap_or_default(),
-        "minecraft:falling_block" => cget(nbt, "BlockState").and_then(|t| string(tget(t, "Name"))).unwrap_or_default(),
-        "minecraft:painting" | "minecraft:armor_stand" | "minecraft:end_crystal" | "minecraft:leash_knot" => kind.to_owned(),
-        k if k.ends_with("minecart") || k.ends_with("boat") || k.ends_with("raft") => k.to_owned(),
+        "minecraft:block_display" => (cget(nbt, "block_state").and_then(|t| string(tget(t, "Name"))).unwrap_or_default(), None),
+        "minecraft:falling_block" => (cget(nbt, "BlockState").and_then(|t| string(tget(t, "Name"))).unwrap_or_default(), None),
+        "minecraft:painting" | "minecraft:armor_stand" | "minecraft:end_crystal" | "minecraft:leash_knot" => (kind.to_owned(), None),
+        k if k.ends_with("minecart") || k.ends_with("boat") || k.ends_with("raft") => (k.to_owned(), None),
         _ => {
             let egg = format!("{kind}_spawn_egg");
-            if host.item_keys().into_iter().any(|k| k.id(host) == Some(egg.as_str())) { egg } else { String::new() }
+            if host.item_keys().into_iter().any(|k| k.id(host) == Some(egg.as_str())) { (egg, None) } else { (String::new(), None) }
         }
     }
 }
 
-/// ItemStorageProvider: the stacks, the same items together, as many rows as its amounts allow: a few types by name
-/// (Show Name Threshold, or always with Always Use List Mode), the rest as icons.
-pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: impl IntoIterator<Item = (String, u32)>) {
+/// ItemStorageProvider: stacks grouped by full item + components, as many rows as its amounts allow: a few types by
+/// name (Show Name Threshold), the rest as icons.
+pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: impl IntoIterator<Item = (String, u32, Option<Compound>)>) {
     if !on(host, "item_storage") {
         return;
     }
-    let mut merged: Vec<(String, u32)> = Vec::new();
-    for (id, n) in stacks {
-        match merged.iter_mut().find(|(m, _)| *m == id) {
+    let mut merged: Vec<(String, u32, Option<Compound>)> = Vec::new();
+    for (id, n, comp) in stacks {
+        match merged.iter_mut().find(|(m, _, mc)| *m == id && *mc == comp) {
             Some(e) => e.1 = e.1.saturating_add(n),
-            None => merged.push((id, n)),
+            None => merged.push((id, n, comp)),
         }
     }
     if on(host, "storage_sort") {
@@ -385,15 +396,17 @@ pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: im
     let threshold = num(host, "storage_names") as usize;
     if on(host, "always_list_mode") || merged.len() < threshold {
         // ItemStorageProvider.Client.append: "<count>× <name>".
-        for (id, n) in &merged {
-            let count = human(i64::from(*n), "");
-            lines.push(Line::new().with(Line::small(id)).with(El::Text(format!("§f{count}× {}", item_name(id)))));
+        for (id, n, comp) in merged {
+            let count = human(i64::from(n), "");
+            lines.push(Line::new().with(Line::small_with(&id, comp)).with(El::Text(format!("§f{count}× {}", item_name(&id)))));
         }
     } else {
-        for row in merged.chunks((num(host, "storage_per_line").clamp(1.0, 64.0)) as usize) {
+        let per_line = num(host, "storage_per_line").clamp(1.0, 64.0) as usize;
+        let mut iter = merged.into_iter().peekable();
+        while iter.peek().is_some() {
             let mut l = Line::new();
-            for (id, n) in row {
-                l = l.with(Line::item(id, *n));
+            for (id, n, comp) in iter.by_ref().take(per_line) {
+                l = l.with(Line::item_with(&id, n, comp));
             }
             lines.push(l);
         }
@@ -488,7 +501,7 @@ fn item_lines(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], details
         if let Some(r) = cap.resource(host, i) {
             let n = cap.amount(host, i);
             if n > 0 {
-                stacks.push((r.item().id(host).unwrap_or_default().to_owned(), n));
+                stacks.push((r.item().id(host).unwrap_or_default().to_owned(), n, api::stack_components(r.as_stack())));
             }
         }
     }
@@ -525,7 +538,7 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
     // The ender chest's contents are the asking player's own.
     if block == "minecraft:ender_chest" {
         let mine = p.entity().nbt(host).unwrap_or_default();
-        storage(host, details, lines, items_of(&mine, "EnderItems").into_iter().map(|(_, id, n)| (id, n)));
+        storage(host, details, lines, items_of(&mine, "EnderItems").into_iter().map(|(_, id, n, c)| (id, n, c)));
         return;
     }
     // Progress on what a mod says.
@@ -565,7 +578,7 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         lines.push(Line::text(tr("jade.locked", "Inventory is locked", &[])));
         return;
     }
-    let item = |items: &[(i64, String, u32)], slot: i64| items.iter().find(|(s, _, _)| *s == slot).map_or_else(|| Line::item("minecraft:air", 0), |(_, id, n)| Line::item(id, *n));
+    let item = |items: &[(i64, String, u32, Option<Compound>)], slot: i64| items.iter().find(|(s, _, _, _)| *s == slot).map_or_else(|| Line::item("minecraft:air", 0), |(_, id, n, c)| Line::item_with(id, *n, c.clone()));
     let mut items_done = false;
     match kind.as_str() {
         // FurnaceProvider: input, fuel, the progress arrow, output.
@@ -595,9 +608,9 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         k if k == "minecraft:chiseled_bookshelf" || k.ends_with("shelf") => {
             let items = items_of(&data, "Items");
             if slot >= 0 && !details && on(host, "shelf")
-                && let Some((_, id, _)) = items.iter().find(|(s, _, _)| *s == i64::from(slot))
+                && let Some((_, id, _, c)) = items.iter().find(|(s, _, _, _)| *s == i64::from(slot))
             {
-                lines.push(Line::new().with(El::Icon(id.clone())));
+                lines.push(Line::new().with(Line::icon_with(id, c.clone())));
                 lines.push(Line::text(format!("§f{}", item_name(id))));
                 items_done = true;
             }
@@ -611,8 +624,8 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
             };
             let (spent, total) = (ints("CookingTimes"), ints("CookingTotalTimes"));
             let mut l = Line::new();
-            for (s, id, n) in &items {
-                l = l.with(Line::item(id, *n));
+            for (s, id, n, c) in &items {
+                l = l.with(Line::item_with(id, *n, c.clone()));
                 let i = *s as usize;
                 if let (Some(t), Some(c)) = (total.get(i), spent.get(i))
                     && *t > 0
@@ -629,7 +642,7 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         "minecraft:jukebox" => {
             if on(host, "jukebox") {
                 match cget(&data, "RecordItem").and_then(stack_of) {
-                    Some((id, _)) => lines.push(Line::new().with(Line::small(&id)).with(El::Text(format!("§f{}", item_name(&id))))),
+                    Some((id, _, c)) => lines.push(Line::new().with(Line::small_with(&id, c)).with(El::Text(format!("§f{}", item_name(&id))))),
                     None => lines.push(Line::text(format!("§7{}", tr("tooltip.jade.empty", "Empty", &[])))),
                 }
             }
@@ -638,9 +651,9 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         // LecternProvider: the book.
         "minecraft:lectern" => {
             if on(host, "lectern")
-                && let Some((id, _)) = cget(&data, "Book").and_then(stack_of)
+                && let Some((id, _, c)) = cget(&data, "Book").and_then(stack_of)
             {
-                lines.push(Line::new().with(Line::small(&id)).with(El::Text(format!("§f{}", item_name(&id)))));
+                lines.push(Line::new().with(Line::small_with(&id, c)).with(El::Text(format!("§f{}", item_name(&id)))));
             }
             items_done = true;
         }
@@ -694,7 +707,7 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
     }
     if !items_done && !hidden[0] && !item_lines(host, level, pos, details, lines) {
         // A container the capability doesn't answer for: its saved items.
-        storage(host, details, lines, items_of(&data, "Items").into_iter().map(|(_, id, n)| (id, n)));
+        storage(host, details, lines, items_of(&data, "Items").into_iter().map(|(_, id, n, c)| (id, n, c)));
     }
     if on(host, "fluid_storage") && !hidden[2] && (details || !on(host, "fluid_detailed")) {
         fluid_lines(host, level, pos, details, lines);

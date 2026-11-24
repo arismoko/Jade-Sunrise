@@ -48,9 +48,19 @@ fn stack_id(t: Option<&Tag>) -> Option<String> {
     (id != "minecraft:air").then_some(id)
 }
 
-fn items(c: &Compound, key: &str) -> Vec<(String, u32)> {
+fn items(c: &Compound, key: &str) -> Vec<(String, u32, Option<Compound>)> {
     let Some(Tag::List(list)) = cget(c, key) else { return Vec::new() };
-    list.iter().filter_map(|t| Some((stack_id(Some(t))?, int(t.get("count")).unwrap_or(1).max(0) as u32))).collect()
+    list.iter()
+        .filter_map(|t| {
+            let id = stack_id(Some(t))?;
+            let count = int(t.get("count")).unwrap_or(1).max(0) as u32;
+            let comp = match t.get("components") {
+                Some(Tag::Compound(c)) if !c.is_empty() => Some(c.clone()),
+                _ => None,
+            };
+            Some((id, count, comp))
+        })
+        .collect()
 }
 
 /// The living reads Jade's health line takes.
@@ -217,11 +227,11 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
     // PetArmorProvider: a pet's body armour ("Show Damageable" leaves out what wears no durability).
     if on(host, "pet_armor")
         && let Some(l) = living
-        && let Some(item) = l.with_equipment(host, EquipmentSlot::Body, |s| s.item())
+        && let Some((item, comp)) = l.with_equipment(host, EquipmentSlot::Body, |s| (s.item(), s.project().and_then(|st| crate::api::stack_components(&st))))
         && (opt(host, "pet_armor_mode") != "damageable" || host.max_damage(item).unwrap_or(0) > 0)
     {
         let id = item.id(host).unwrap_or_default();
-        lines.push(Line::new().with(Line::small(id)).with(El::Text(format!("§f{}", item_name(id)))));
+        lines.push(Line::new().with(Line::small_with(id, comp)).with(El::Text(format!("§f{}", item_name(id)))));
     }
     // StatusEffectsProvider: each effect and its time, by category (good green, bad red).
     if on(host, "potion_effects")
@@ -327,9 +337,10 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
     // SulfurCubeProvider: what a sulfur cube swallowed.
     if kind == "minecraft:sulfur_cube"
         && on(host, "sulfur_cube")
-        && let Some(id) = living.and_then(|l| l.with_equipment(host, EquipmentSlot::Head, |s| s.item())).map(|k| k.id(host).unwrap_or_default().to_owned())
+        && let Some((item, comp)) = living.and_then(|l| l.with_equipment(host, EquipmentSlot::Head, |s| (s.item(), s.project().and_then(|st| crate::api::stack_components(&st)))))
     {
-        lines.push(Line::new().with(Line::small(&id)).with(El::Text(format!("§f{}", item_name(&id)))));
+        let id = item.id(host).unwrap_or_default().to_owned();
+        lines.push(Line::new().with(Line::small_with(&id, comp)).with(El::Text(format!("§f{}", item_name(&id)))));
     }
     match kind {
         // ItemFrameProvider: the framed item's name.
@@ -359,9 +370,9 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
                 && let Some(l) = living
             {
                 for slot in [EquipmentSlot::Head, EquipmentSlot::Chest, EquipmentSlot::Legs, EquipmentSlot::Feet, EquipmentSlot::OffHand, EquipmentSlot::MainHand] {
-                    if let Some(item) = l.with_equipment(host, slot, |s| s.item()) {
+                    if let Some((item, comp)) = l.with_equipment(host, slot, |s| (s.item(), s.project().and_then(|st| crate::api::stack_components(&st)))) {
                         let id = item.id(host).unwrap_or_default();
-                        lines.push(Line::new().with(Line::small(id)).with(El::Text(format!("§f{}", item_name(id)))));
+                        lines.push(Line::new().with(Line::small_with(id, comp)).with(El::Text(format!("§f{}", item_name(id)))));
                     }
                 }
             }

@@ -192,6 +192,24 @@ impl<'a> Gfx<'a> {
         self.d.item(key, at, size * self.scale)
     }
 
+    /// An item's icon with optional component patch through `DrawContext::item_stack`, falling back to `item`.
+    pub fn item_with(&mut self, id: &str, components: Option<&Compound>, at: [f32; 2], size: f32) -> bool {
+        let Some(key) = item_key(self.h, id) else { return false };
+        if let Some(patch) = components
+            && !patch.is_empty()
+        {
+            let mut stack = ItemStack::of(key);
+            if stack.set_components(patch.clone()).is_ok() {
+                let at = self.p(at);
+                if self.d.item_stack(&stack, at, size * self.scale) {
+                    return true;
+                }
+            }
+        }
+        let at = self.p(at);
+        self.d.item(key, at, size * self.scale)
+    }
+
     /// A fluid's look (`DrawContext::fluid`), `size` GUI pixels square before the transform.
     pub fn fluid(&mut self, id: &str, at: [f32; 2], size: f32) {
         let at = self.p(at);

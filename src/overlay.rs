@@ -36,6 +36,7 @@ pub struct EntityData {
     pub kind: String,
     pub name: String,
     pub icon: String,
+    pub icon_components: Option<Compound>,
     pub lines: Vec<String>,
     pub picked: bool,
     pub projectile: bool,
@@ -931,8 +932,28 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, lines: &mut V
     }
 }
 
+/// Block-entity-derived item components for a block's overlay icon (player head profile, decorated pot sherds, banner patterns).
+fn block_icon_components(h: &dyn ClientHost, pos: [i32; 3], block: &str) -> Option<Compound> {
+    let data = block_entity_data(h, pos)?;
+    let mut patch = Compound::new();
+    if matches!(block, "minecraft:player_head" | "minecraft:player_wall_head") {
+        if let Some(profile) = cget(&data, "profile") {
+            patch.insert(JavaString::from("minecraft:profile"), profile.clone());
+        }
+    } else if block == "minecraft:decorated_pot" {
+        if let Some(sherds) = cget(&data, "sherds") {
+            patch.insert(JavaString::from("minecraft:pot_decorations"), sherds.clone());
+        }
+    } else if block.ends_with("_banner")
+        && let Some(patterns) = cget(&data, "patterns")
+    {
+        patch.insert(JavaString::from("minecraft:banner_patterns"), patterns.clone());
+    }
+    (!patch.is_empty()).then_some(patch)
+}
+
 /// What a server line says about the box rather than in it: the icon, the title's pattern and the mob's stats.
-fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option<String>, badge: &mut bool) {
+fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option<String>, icon_components: &mut Option<Compound>, badge: &mut bool) {
     let mut titles: Vec<String> = Vec::new();
     let mut stats = None;
     let mut any = false;
@@ -940,6 +961,13 @@ fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option
         l.els.retain(|e| match e {
             El::Icon(id) => {
                 *icon = Some(id.clone());
+                *icon_components = None;
+                any = true;
+                false
+            }
+            El::StackIcon { id, components } => {
+                *icon = Some(id.clone());
+                *icon_components = Some(components.clone());
                 any = true;
                 false
             }
@@ -1042,6 +1070,7 @@ pub fn shelf_slot(pos: [i32; 3], block: &str, state: &str, hit: [f64; 3], face: 
 pub struct BuiltBox {
     pub lines: Vec<Line>,
     pub icon: Option<String>,
+    pub icon_components: Option<Compound>,
     pub badge: bool,
     /// BreakingProgressProvider: how far, whether it fails, and its alpha.
     pub mining: Option<(f32, bool, f32)>,
@@ -1054,19 +1083,19 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
     let details = with(|c| c.details);
     let theme = theme::current(h);
     let mut badge = false;
-    let (mut icon, title, ns, kind) = match seen {
+    let (mut icon, mut icon_components, title, ns, kind) = match seen {
         Seen::Block { pos, block, state, .. } => {
             let target = Target::Block { pos: *pos, block: block.clone(), state: state.clone(), hit: [0.0; 3] };
             let named = api::registry(|r| r.names.clone()).into_iter().find_map(|f| f(h, &target));
             match named {
-                Some((icon, title, ns)) => (Some(icon).filter(|i| gfx::item_key(h, i).is_some()), title, ns, None),
+                Some((icon, title, ns)) => (Some(icon).filter(|i| gfx::item_key(h, i).is_some()), None, title, ns, None),
                 // PlayerHeadProvider: a head with an owner is named after them.
                 None if matches!(block.as_str(), "minecraft:player_head" | "minecraft:player_wall_head") && on(h, "player_head") => {
                     let title = match head_owner(h, *pos) {
                         Some(owner) => tr(h, "block.minecraft.player_head.named", "%s's Head").replace("%s", &owner),
                         None => item_name(h, "minecraft:player_head"),
                     };
-                    (Some("minecraft:player_head".to_owned()), title, "minecraft".to_owned(), None)
+                    (Some("minecraft:player_head".to_owned()), block_icon_components(h, *pos, block), title, "minecraft".to_owned(), None)
                 }
                 None => {
                     let item = block_item(h, block);
@@ -1076,14 +1105,15 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
                     {
                         let bucket = h.fluid_bucket(fluid_id).and_then(|k| k.id(h).map(str::to_owned));
                         let ns = fluid_id.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
-                        (bucket, h.fluid_name(fluid_id), ns, None)
+                        (bucket, None, h.fluid_name(fluid_id), ns, None)
                     } else {
                         // WaxedProvider.BlockComponent.getIcon.
                         if on(h, "waxed") && block.ends_with("_sign") && block_entity_data(h, *pos).is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1)))) {
                             badge = true;
                         }
                         let ns = block.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
-                        (item, block_name(h, block), ns, None)
+                        let comp = block_icon_components(h, *pos, block);
+                        (item, comp, block_name(h, block), ns, None)
                     }
                 }
             }
@@ -1095,7 +1125,8 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
             }
             let title = if data.name.is_empty() { entity_name(h, &data.kind) } else { resolve(h, &data.name) };
             let ns = data.kind.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
-            (Some(data.icon.clone()).filter(|i| !i.is_empty() && gfx::item_key(h, i).is_some()), title, ns, Some(data.kind.clone()))
+            let valid = !data.icon.is_empty() && gfx::item_key(h, &data.icon).is_some();
+            (valid.then_some(data.icon), valid.then_some(data.icon_components).flatten(), title, ns, Some(data.kind))
         }
     };
     let title = match seen {
@@ -1160,7 +1191,7 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
             }
         }
     }
-    apply_directives(h, &mut lines, &mut icon, &mut badge);
+    apply_directives(h, &mut lines, &mut icon, &mut icon_components, &mut badge);
     // IThemeHelper.title: the title in the theme's colour.
     if on(h, "object_name")
         && let Some(El::Text(text)) = lines.first_mut().and_then(|l| l.els.first_mut())
@@ -1197,7 +1228,7 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
             None
         }
     };
-    Some(BuiltBox { lines, icon, badge, mining, sneaky })
+    Some(BuiltBox { lines, icon, icon_components, badge, mining, sneaky })
 }
 
 /// `OverlayRenderer.renderOverlay`'s stand-in while the position is adjusted with nothing looked at: the Grass Block.
@@ -1205,15 +1236,15 @@ pub fn sample_box(h: &dyn ClientHost) -> BuiltBox {
     let theme = theme::current(h);
     let title = format!("{}{}", theme.title_code, item_name(h, "minecraft:grass_block"));
     let modname = format!("{}{}", theme.mod_code, mod_name(h, "minecraft"));
-    BuiltBox { lines: vec![Line::text(title), Line::text(modname)], icon: None, badge: false, mining: None, sneaky: false }
+    BuiltBox { lines: vec![Line::text(title), Line::text(modname)], icon: None, icon_components: None, badge: false, mining: None, sneaky: false }
 }
 
 /// An element's size.
 fn size(h: &dyn ClientHost, e: &El) -> (f32, f32) {
     match e {
         El::Text(t) => (gfx::width(h, t), 9.0),
-        El::Item { small: true, .. } => (10.0, 9.0),
-        El::Item { .. } => (18.0, 18.0),
+        El::Item { small: true, .. } | El::Stack { small: true, .. } => (10.0, 9.0),
+        El::Item { .. } | El::Stack { .. } => (18.0, 18.0),
         El::Arrow(_) => (22.0, 16.0),
         El::Bar { text, .. } | El::FluidBar { text, .. } => ((gfx::width(h, text) + 6.0).max(100.0), 12.0),
         El::Fluid(_) => (10.0, 9.0),
@@ -1239,7 +1270,7 @@ fn size(h: &dyn ClientHost, e: &El) -> (f32, f32) {
         }
         El::Space(w) => (*w, 0.0),
         El::Energy => (10.0, 9.0),
-        El::Mark(_) | El::Icon(_) | El::Badge | El::Title(_) | El::Stats { .. } => (0.0, 0.0),
+        El::Mark(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } => (0.0, 0.0),
     }
 }
 
@@ -1255,19 +1286,10 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
     match e {
         El::Text(t) => g.text(&look.map(t), [x, y], look.base, look.shadow),
         El::Item { id, count, small } => {
-            if id == "minecraft:air" {
-                return;
-            }
-            if *small {
-                g.item(id, [x, y], 8.0);
-            } else {
-                g.item(id, [x + 1.0, y + 1.0], 16.0);
-                if *count > 1 {
-                    let s = if *count >= 10_000 { format!("{}k", count / 1000) } else { count.to_string() };
-                    let w = gfx::width(h, &s);
-                    g.text(&s, [x + 18.0 - w, y + 10.0], look.amount, look.shadow);
-                }
-            }
+            draw_item_el(g, id, None, *count, *small, x, y, look);
+        }
+        El::Stack { id, count, small, components } => {
+            draw_item_el(g, id, Some(components), *count, *small, x, y, look);
         }
         // JadeUI.progressArrow: jade:progress_base, then jade:progress clipped to the done part.
         El::Arrow(f) => {
@@ -1365,7 +1387,24 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
         El::Energy => {
             g.sprite(&theme.sprite("jade:energy"), [0.0, 0.0, 16.0, 16.0], [x, y, 9.0, 9.0], 0xFFFF_FFFF);
         }
-        El::Space(_) | El::Icon(_) | El::Badge | El::Title(_) | El::Stats { .. } => {}
+        El::Space(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_item_el(g: &mut Gfx<'_>, id: &str, components: Option<&Compound>, count: u32, small: bool, x: f32, y: f32, look: &theme::TextLook) {
+    if id == "minecraft:air" {
+        return;
+    }
+    if small {
+        g.item_with(id, components, [x, y], 8.0);
+    } else {
+        g.item_with(id, components, [x + 1.0, y + 1.0], 16.0);
+        if count > 1 {
+            let s = if count >= 10_000 { format!("{}k", count / 1000) } else { count.to_string() };
+            let w = gfx::width(g.h, &s);
+            g.text(&s, [x + 18.0 - w, y + 10.0], look.amount, look.shadow);
+        }
     }
 }
 
@@ -1514,7 +1553,7 @@ pub fn draw_box(d: &mut dyn DrawContext, h: &dyn ClientHost, b: &BuiltBox, adjus
                 None => ([x, iy], 16.0),
             }
         };
-        g.item(icon, at, isize);
+        g.item_with(icon, b.icon_components.as_ref(), at, isize);
         // WaxedProvider.BlockComponent.waxedIcon: a honeycomb at half size on top.
         if b.badge {
             g.item("minecraft:honeycomb", [at[0] + isize / 2.0, at[1] + isize / 2.0], isize / 2.0);

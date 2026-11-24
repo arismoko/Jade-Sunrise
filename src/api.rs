@@ -29,6 +29,8 @@ pub enum El {
     Text(String),
     /// An item's icon: `small` at half size (JadeUI.smallItem), else 16 with its count.
     Item { id: String, count: u32, small: bool },
+    /// An item's icon with its component patch (glint, dyed colour, head skin, trims, sherds).
+    Stack { id: String, count: u32, small: bool, components: Compound },
     /// The progress arrow (JadeUI.progressArrow), 0 to 1.
     Arrow(f32),
     /// A progress bar (energy, ProgressView), 0 to 1, its colour `0xRRGGBB` and the text on it.
@@ -46,6 +48,8 @@ pub enum El {
     Mark(String),
     /// Not drawn: the box's icon becomes this item (IComponentProvider.getIcon).
     Icon(String),
+    /// Not drawn: the box's icon becomes this stack with its component patch.
+    StackIcon { id: String, components: Compound },
     /// Not drawn: a honeycomb over the icon (WaxedProvider.waxedIcon).
     Badge,
     /// Not drawn: the title with `{0}` as what it is now (ITooltip.replace(CORE_OBJECT_NAME, ...)).
@@ -81,6 +85,66 @@ impl Line {
     pub fn small(id: &str) -> El {
         El::Item { id: id.to_owned(), count: 1, small: true }
     }
+    /// An item's icon with optional component patch.
+    pub fn item_with(id: &str, count: u32, components: Option<Compound>) -> El {
+        match components.filter(|c| !c.is_empty()) {
+            Some(components) => El::Stack { id: id.to_owned(), count, small: false, components },
+            None => Self::item(id, count),
+        }
+    }
+    /// An item's small icon with optional component patch.
+    pub fn small_with(id: &str, components: Option<Compound>) -> El {
+        match components.filter(|c| !c.is_empty()) {
+            Some(components) => El::Stack { id: id.to_owned(), count: 1, small: true, components },
+            None => Self::small(id),
+        }
+    }
+    /// Box icon directive with optional component patch.
+    pub fn icon_with(id: &str, components: Option<Compound>) -> El {
+        match components.filter(|c| !c.is_empty()) {
+            Some(components) => El::StackIcon { id: id.to_owned(), components },
+            None => El::Icon(id.to_owned()),
+        }
+    }
+}
+
+pub(crate) fn encode_components(patch: &Compound) -> Option<String> {
+    if patch.is_empty() {
+        return None;
+    }
+    let mut w = mod_api::wire::Writer::default();
+    w.limit(4096);
+    w.put(patch);
+    if w.error().is_some() {
+        return None;
+    }
+    let bytes = w.into_bytes();
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        use std::fmt::Write;
+        let _ = write!(&mut hex, "{b:02x}");
+    }
+    Some(hex)
+}
+
+pub(crate) fn decode_components(hex: &str) -> Option<Compound> {
+    if hex.is_empty() || !hex.len().is_multiple_of(2) || hex.len() > 8192 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for pair in hex.as_bytes().chunks_exact(2) {
+        let s = std::str::from_utf8(pair).ok()?;
+        bytes.push(u8::from_str_radix(s, 16).ok()?);
+    }
+    mod_api::wire::Reader::decode::<Compound>(&bytes).ok()
+}
+
+pub(crate) fn stack_components(stack: &ItemStack) -> Option<Compound> {
+    let mut patch = stack.components().map(|c| c.as_nbt().clone()).unwrap_or_default();
+    if let Some(damage) = stack.damage_component() {
+        patch.insert(JavaString::from("minecraft:damage"), Tag::Int(damage as i32));
+    }
+    (!patch.is_empty()).then_some(patch)
 }
 
 const SEP: char = '\u{1f}';
@@ -97,10 +161,18 @@ pub fn encode(line: &Line) -> String {
             El::Small(t) => format!("{CMD}m {}", clean(t)),
             El::Mark(t) => format!("{CMD}k {}", clean(t)),
             El::Icon(id) => format!("{CMD}I {id}"),
+            El::StackIcon { id, components } => match encode_components(components) {
+                Some(hex) => format!("{CMD}J {id} {hex}"),
+                None => format!("{CMD}I {id}"),
+            },
             El::Badge => format!("{CMD}W"),
             El::Title(t) => format!("{CMD}T {}", clean(t)),
             El::Stats { absorb, armor } => format!("{CMD}S {absorb} {armor}"),
             El::Item { id, count, small } => format!("{CMD}i {id} {count} {}", u8::from(*small)),
+            El::Stack { id, count, small, components } => match encode_components(components) {
+                Some(hex) => format!("{CMD}j {id} {count} {} {hex}", u8::from(*small)),
+                None => format!("{CMD}i {id} {count} {}", u8::from(*small)),
+            },
             El::Arrow(f) => format!("{CMD}a {f}"),
             El::Bar { frac, color, text } => format!("{CMD}b {frac} {color} {}", clean(text)),
             El::Fluid(f) => format!("{CMD}f {}", clean(f)),
@@ -133,6 +205,16 @@ pub fn decode(s: &str) -> Line {
                 count: f(2).max(0.0) as u32,
                 small: w.get(3) == Some(&"1"),
             }),
+            Some("j") => {
+                let p: Vec<&str> = cmd.splitn(5, ' ').collect();
+                let id = p.get(1).copied().unwrap_or("minecraft:air").to_owned();
+                let count = p.get(2).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+                let small = p.get(3) == Some(&"1");
+                match p.get(4).and_then(|hex| decode_components(hex)) {
+                    Some(components) => line.els.push(El::Stack { id, count, small, components }),
+                    None => line.els.push(El::Item { id, count, small }),
+                }
+            }
             Some("a") => line.els.push(El::Arrow(f(1))),
             Some("b") => line.els.push(El::Bar { frac: f(1), color: f(2) as u32, text: w.get(3).copied().unwrap_or("").to_owned() }),
             Some("f") => line.els.push(El::Fluid(rest())),
@@ -144,6 +226,13 @@ pub fn decode(s: &str) -> Line {
             Some("m") => line.els.push(El::Small(rest())),
             Some("k") => line.els.push(El::Mark(rest())),
             Some("I") => line.els.push(El::Icon(w.get(1).copied().unwrap_or("minecraft:air").to_owned())),
+            Some("J") => {
+                let id = w.get(1).copied().unwrap_or("minecraft:air").to_owned();
+                match w.get(2).and_then(|hex| decode_components(hex)) {
+                    Some(components) => line.els.push(El::StackIcon { id, components }),
+                    None => line.els.push(El::Icon(id)),
+                }
+            }
             Some("W") => line.els.push(El::Badge),
             Some("T") => line.els.push(El::Title(rest())),
             Some("S") => line.els.push(El::Stats { absorb: f(1), armor: f(2) }),
