@@ -314,7 +314,8 @@ impl Gfx<'_> {
     }
 
     /// A button as the game draws one (AbstractButton.renderWidget): the state's nine-sliced sprite, inactive before
-    /// highlighted, and the label scrolling between 2 pixels in from each side, white or grey (`0xA0A0A0`) when inactive.
+    /// highlighted, and the label centred, or scrolling between 2 pixels in from each side when it doesn't fit, white or
+    /// grey (`0xA0A0A0`) when inactive.
     /// Drawn here since Dev f8aa80e took `DrawContext::widget_button` away (mounted screen widgets replace it).
     pub fn button(&mut self, rect: [f32; 4], label: &Text, active: bool, hover: bool) {
         let [x, y, w, h] = rect;
@@ -327,6 +328,16 @@ impl Gfx<'_> {
         };
         self.d.gui_nine_slice(sprite, rect, 0xFFFF_FFFF);
         let color = if active { 0xFFFF_FFFF } else { 0xFFA0_A0A0 };
+        // ActiveTextCollector.acceptScrollingWithDefaultCenter: a label that fits is centred on the button,
+        // `clamp(centerX, left + width / 2, right - width / 2)` in whole pixels.
+        let (left, right) = ((x + 2.0) as i32, (x + w - 2.0) as i32);
+        let width = self.h.text_width(label) as i32;
+        if width <= right - left {
+            let centre = ((left + right) / 2).clamp(left + width / 2, right - width / 2);
+            let top = ((y + y + h - 9.0) / 2.0 + 1.0).floor();
+            self.text_comp(label, [(centre - width / 2) as f32, top], color, true);
+            return;
+        }
         self.scrolling(label, x + 2.0, x + w - 2.0, y, y + h, color);
     }
 
