@@ -1456,7 +1456,7 @@ pub fn draw_layer(h: &dyn ClientHost, d: &mut dyn DrawContext) {
     let previewing = crate::config_ui::wants_box();
     // Hide from GUIs (a config screen with the preview shows it over itself), the player list, Show Overlay off.
     let screen_hides = !previewing && !h.playing() && on(h, "hide_from_guis");
-    let list_hides = on(h, "hide_from_tab_list") && h.is_key_down("key.keyboard.tab");
+    let list_hides = on(h, "hide_from_tab_list") && crate::keys::player_list_down(h);
     if !h.on(opts::ID) || h.local_player().is_none() || screen_hides || list_hides || with(|c| c.hidden) {
         with(|c| {
             c.seen = None;

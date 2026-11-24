@@ -85,3 +85,27 @@ pub(crate) fn binding(host: &dyn ClientHost, name: &str) -> Option<(String, Clie
     }
     None
 }
+
+static PLAYER_LIST: Mutex<Option<VanillaKeyMappingRef>> = Mutex::new(None);
+
+/// Whether vanilla's Player List key mapping (`key.playerlist`) is currently held down.
+pub(crate) fn player_list_down(host: &dyn ClientHost) -> bool {
+    for _ in 0..2 {
+        let m = {
+            let mut slot = PLAYER_LIST.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(m) = *slot {
+                m
+            } else {
+                let Ok(m) = host.vanilla_key_mapping("key.playerlist") else { return false };
+                *slot = Some(m);
+                m
+            }
+        };
+        match m.is_down(host) {
+            Ok(down) => return down,
+            Err(MappingError::Stale) => *PLAYER_LIST.lock().unwrap_or_else(|e| e.into_inner()) = None,
+            Err(_) => return false,
+        }
+    }
+    false
+}
