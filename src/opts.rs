@@ -1,5 +1,5 @@
 //! Jade's settings (WailaConfig and the plugin options), their names in the jar's language files, and the store: the
-//! file `config/jade/jade.json` as Java keeps it, through the fork's config files service. Profiles are
+//! file `config/jade/jade.json` as Java keeps it, through Sunrise's config files service. Profiles are
 //! `config/jade/profile-<n>.json`, the ignore lists `config/jade/hide-blocks.json` and `hide-entities.json`, and a
 //! server's forced values `config/jade/server-plugin-overrides.json` (`/jadec generate_server_overrides`).
 //!

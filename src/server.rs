@@ -161,7 +161,7 @@ fn lines_out(head: String, lines: Vec<Line>) -> String {
         out.push('\n');
         out.push_str(&api::encode(&l));
     }
-    // The fork's cap is 30 000 bytes a message.
+    // Sunrise's cap is 30 000 bytes a message.
     if out.len() > 28_000 {
         let mut cut = 28_000;
         while !out.is_char_boundary(cut) {

@@ -1,4 +1,4 @@
-//! Drawing on the fork's `DrawContext`: legacy `§` text as styled components, scaled text through `gui_paint`'s pose,
+//! Drawing on Sunrise's `DrawContext`: legacy `§` text as styled components, scaled text through `gui_paint`'s pose,
 //! items by id, Jade's own sprites (shipped in `assets/jade/textures/gui/sprites`, so in the GUI atlas as
 //! `jade:gui/sprites/<name>`), and a transform for the overlay's Display Scale and its fade.
 use mod_api::client::hud_layout::{GuiDraw, PoseOp};

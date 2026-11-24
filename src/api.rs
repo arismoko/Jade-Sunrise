@@ -1,6 +1,6 @@
 //! Jade's provider API for other mods (IWailaPlugin's registrations, as this port has them).
 //!
-//! Another fork mod adds lines to the overlay by naming `jade` as an optional dependency in its `horizon-mod.toml`
+//! Another mod adds lines to the overlay by naming `jade` as an optional dependency in its `sunrise-mod.toml`
 //! (`[dependencies] jade = { version = "^26", optional = true }`) and registering its providers from any hook that has
 //! a host, behind `mod_api::if_installed!(host, jade, { ... })`. Registering is idempotent, so a mod can do it in each
 //! `client_setup` and `server_starting` it gets. See the README's "Provider API" section.
@@ -14,7 +14,7 @@
 //!   resolves in its own language.
 //!
 //! Energy, fluids and items need no provider: Jade reads every block's `ENERGY`, `FLUIDS` and `ITEMS` capabilities
-//! itself (EnergyStorageProvider, FluidStorageProvider, ItemStorageProvider), so any fork mod's FE buffer, tank or
+//! itself (EnergyStorageProvider, FluidStorageProvider, ItemStorageProvider), so any mod's FE buffer, tank or
 //! slots show up. [`hide_storage`] leaves a mod's blocks out of those lines when it draws its own.
 use mod_api::*;
 use std::sync::Mutex;

@@ -1,11 +1,11 @@
-//! The client's ticks: Jade's keys (JadeClient, through the fork's key mappings), the requests for the server's lines,
+//! The client's ticks: Jade's keys (JadeClient, through Sunrise's key mappings), the requests for the server's lines,
 //! the settings the server answers this player by, what comes back, and `/jadec` (JadeClientCommand).
 use crate::opts::{self, ID, on, opt, tr};
 use crate::overlay::{self, EntityData, NET_REQUEST, Seen, with};
 use mod_api::*;
 use std::time::Instant;
 
-/// JadeKeys: name, label and default key, registered as the fork's key mappings (Controls, category Jade).
+/// JadeKeys: name, label and default key, registered as Sunrise's key mappings (Controls, category Jade).
 pub const KEYS: [[&str; 3]; 11] = [
     ["config", "Open Config", "key.keyboard.keypad.0"],
     ["show_overlay", "Show Overlay", "key.keyboard.keypad.1"],

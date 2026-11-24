@@ -1,9 +1,9 @@
-Jade for the arismoko/horizon fork
+Jade for Sunrise
 
 This is an adapted version of Jade (https://github.com/Snownee/Jade) by Snownee, version 26.3.5 for Minecraft 26.3,
 shared under the same licence, Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (see LICENSE).
 
-Changes: Jade's behaviour rewritten in Rust for the Horizon fork's mod API (no original code runs); its assets
+Changes: Jade's behaviour rewritten in Rust on Sunrise's mod API (no original code runs); its assets
 (language files, GUI sprites, themes) are included unchanged under assets/jade. src/facts.rs is generated from
 Minecraft's own block data.
 

@@ -1,7 +1,7 @@
-//! Jade (Snownee, CC BY-NC-SA 4.0; Jade-mc26.3-Fabric-26.3.5) for the arismoko/horizon fork's mod API: the look-at
+//! Jade (Snownee, CC BY-NC-SA 4.0; Jade-mc26.3-Fabric-26.3.5) for Sunrise's mod API: the look-at
 //! overlay for blocks and entities, its providers, themes, config screens and profiles, its keys, `/jade` and `/jadec`,
 //! and the `jade:max_position_deviation` rule. Written against Hooks only (no mixins, no `[[inject]]`), so it builds
-//! against the fork's prebuilt SDK.
+//! against Sunrise's prebuilt SDK.
 //!
 //! Where things run:
 //! - the client finds what the player looks at, builds the box from Jade's client providers, the other mods' (see

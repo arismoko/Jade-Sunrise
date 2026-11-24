@@ -4,7 +4,7 @@
 //! store (`opts.rs`) keeps every change at once (so `Done`, not Java's Save & Quit and Cancel); a slider or a dragged
 //! overlay is kept when it is let go.
 //!
-//! The fork has no way into another screen's page (Options > Mods' Config button opens a mod's registered settings):
+//! Sunrise has no way into another screen's page (Options > Mods' Config button opens a mod's registered settings):
 //! the screens open from Jade's Open Config key and `/jadec config`. The list, its cards and the navigation column are
 //! clipped to their boxes (`push_clip`), as Java's scissors cut them. Key binds show here; they are changed in Controls
 //! (no API sets a mod's key binding).

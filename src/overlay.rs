@@ -2,7 +2,7 @@
 //! lines from Jade's client providers, the plugins' and the server's, and the box drawn in the HUD layer `jade:overlay`
 //! with the theme's frame.
 //!
-//! The client reads blocks itself (state, block entity data). Entities are the server's to describe: the fork's client
+//! The client reads blocks itself (state, block entity data). Entities are the server's to describe: Sunrise's client
 //! entity handles carry identity only, so an entity's kind, name, icon and lines come back from the server
 //! (`server.rs`), asked for a few times a second while the player looks.
 use crate::api::{self, El, Line, Target, TR_CLOSE, TR_OPEN, TR_SEP};

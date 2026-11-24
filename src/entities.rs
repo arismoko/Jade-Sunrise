@@ -1,4 +1,4 @@
-//! Jade's lines for entities, built on the server (the fork's client entity handles read no entity data): VanillaPlugin's
+//! Jade's lines for entities, built on the server (Sunrise's client entity handles read no entity data): VanillaPlugin's
 //! entity providers and the AccessibilityPlugin's, from the entity's saved data (`Entity.saveWithoutId`, what `/data get
 //! entity` shows) and the living, merchant and attribute reads. Text the client must translate is written as markers.
 use crate::api::{El, Line, Request, entity_name, item_name, tr};
