@@ -554,7 +554,7 @@ fn cget<'a>(c: &'a Compound, key: &str) -> Option<&'a Tag> {
 
 /// Jade's own client lines for a block (VanillaPlugin's client components): growth, redstone, note blocks, TNT,
 /// beehives' honey, enchanting power, signs and block details.
-fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, state: &str, details: bool, lines: &mut Vec<Line>) {
+fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, real: &str, state: &str, details: bool, lines: &mut Vec<Line>) {
     let p = |k: &str| prop(state, k);
     // CropProgressProvider.
     if let Some(age) = p("age").and_then(|a| a.parse::<u32>().ok()).filter(|_| on(h, "crop_progress")) {
@@ -608,9 +608,15 @@ fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, state: &str, de
     if let Some(hl) = p("honey_level").filter(|_| on(h, "beehive")) {
         lines.push(Line::text(trf(h, "jade.beehive.honey", "Honey: %s", &[&format!("§f{}", trf(h, "jade.fraction", "%d / %d", &[&hl, "5"]))])));
     }
-    // EnchantmentPowerProvider: a bookshelf counts one for an enchanting table.
-    if matches!(block, "minecraft:bookshelf" | "minecraft:chiseled_bookshelf") && details && on(h, "enchantment_power") {
-        lines.push(Line::text(trf(h, "jade.ench_power", "Ench Power: %s", &["§f1"])));
+    // EnchantmentPowerProvider: any block whose enchanting power bonus is positive.
+    if on(h, "enchantment_power")
+        && let Some(level) = level(h)
+        && let Some(bs) = if block == real { level.block_state(h, pos) } else { bkey(h, block).and_then(|k| h.block_state_default(k)) }
+        && let Ok(power) = level.get_enchant_power_bonus(h, pos, bs, pos)
+        && power.is_finite()
+        && power > 0.0
+    {
+        lines.push(Line::text(trf(h, "jade.ench_power", "Ench Power: %s", &[&format!("§f{}", trim2(f64::from(power)))])));
     }
     // SignProvider: the side the player faces, line by line.
     if access(h, "access_sign")
@@ -653,25 +659,36 @@ fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, state: &str, de
             lines.push(Line::text(trf(h, "jade.access.block.level", "Level: {0}", &[&n])));
         }
     }
-    // TotalEnchantmentPowerProvider: the bookshelves an enchanting table reads.
+    // TotalEnchantmentPowerProvider: the enchanting power contributed by valid surrounding blocks.
     if block == "minecraft:enchanting_table"
         && on(h, "total_enchantment_power")
         && let Some(level) = level(h)
     {
-        let mut power = 0;
+        let mut power = 0.0f32;
         for dx in -2..=2i32 {
             for dz in -2..=2i32 {
                 if dx.abs() != 2 && dz.abs() != 2 {
                     continue;
                 }
                 for dy in 0..=1 {
-                    if level.block(h, [pos[0] + dx, pos[1] + dy, pos[2] + dz]).is_some_and(|b| b.id(h) == Some("minecraft:bookshelf")) {
-                        power += 1;
+                    let mid = [pos[0] + dx / 2, pos[1] + dy, pos[2] + dz / 2];
+                    if !level.block(h, mid).is_some_and(|b| h.block_in_tag(b, "minecraft:enchantment_power_transmitter") == Some(true)) {
+                        continue;
+                    }
+                    let shelf = [pos[0] + dx, pos[1] + dy, pos[2] + dz];
+                    if let Some(bs) = level.block_state(h, shelf)
+                        && let Ok(bonus) = level.get_enchant_power_bonus(h, shelf, bs, pos)
+                        && bonus.is_finite()
+                        && bonus > 0.0
+                    {
+                        power += bonus;
                     }
                 }
             }
         }
-        lines.push(Line::text(trf(h, "jade.ench_power", "Ench Power: %s", &[&format!("§f{}", power.min(15))])));
+        if power > 0.0 {
+            lines.push(Line::text(trf(h, "jade.ench_power", "Ench Power: %s", &[&format!("§f{}", trim2(f64::from(power)))])));
+        }
     }
 }
 
@@ -1053,8 +1070,8 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
     let mut lines = vec![title_line];
     lines.extend(tool_line);
     let target = match seen {
-        Seen::Block { pos, block, state, hit, .. } => {
-            vanilla_block(h, *pos, block, state, details, &mut lines);
+        Seen::Block { pos, block, real, state, hit, .. } => {
+            vanilla_block(h, *pos, block, real, state, details, &mut lines);
             Target::Block { pos: *pos, block: block.clone(), state: state.clone(), hit: *hit }
         }
         Seen::Entity { id, .. } => Target::Entity { id: *id, kind: kind.clone().unwrap_or_default() },
