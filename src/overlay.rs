@@ -454,8 +454,11 @@ fn tool_correct(h: &dyn ClientHost, tool: &str, block: &str) -> bool {
     tag(&format!("minecraft:mineable/{kind}")) && !tag(&format!("minecraft:incorrect_for_{tier}_tool"))
 }
 
+/// The tick the cache was filled on, and each block's harvest tools.
+type HarvestCache = ((u32, u32), std::collections::HashMap<String, Vec<String>>);
+
 thread_local! {
-    static HARVEST: RefCell<((u32, u32), std::collections::HashMap<String, Vec<String>>)> = RefCell::new(((u32::MAX, u32::MAX), Default::default()));
+    static HARVEST: RefCell<HarvestCache> = RefCell::new(((u32::MAX, u32::MAX), Default::default()));
 }
 
 /// HarvestToolProvider.getTool, cached per block: the lowest tier of each tool type that suits it.

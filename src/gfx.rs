@@ -192,10 +192,6 @@ impl<'a> Gfx<'a> {
         self.d.item(key, at, size * self.scale)
     }
 
-    pub fn stack(&mut self, stack: &ItemStack, at: [f32; 2], size: f32) -> bool {
-        let at = self.p(at);
-        self.d.item_stack(stack, at, size * self.scale)
-    }
 
     /// A GUI sprite (atlas name) stretched over `rect`, tinted white with the transform's alpha. False when the atlas
     /// hasn't it.

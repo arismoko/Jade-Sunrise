@@ -51,8 +51,10 @@ struct Open;
 
 impl IPayloadHandler for Open {
     fn handle(&self, payload: PayloadBytes, cx: &mut dyn IPayloadContext) -> Result<(), PayloadHandleError> {
+        #[cfg_attr(not(feature = "guideme"), allow(unused_variables))]
         let level = payload.0.first().copied().unwrap_or(0).min(4);
         let Ok(host) = cx.client_host() else { return Ok(()) };
+        #[cfg_attr(not(feature = "guideme"), allow(unused_mut))]
         let mut opened = false;
         mod_api::if_installed!(host, guideme, {
             opened = guideme::api::open_commands(NS, level);

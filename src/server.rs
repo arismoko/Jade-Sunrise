@@ -83,13 +83,6 @@ fn int(t: Option<&Tag>) -> Option<i64> {
     }
 }
 
-fn float(t: Option<&Tag>) -> Option<f64> {
-    match t? {
-        Tag::Float(v) => Some(f64::from(f32::from_bits(*v))),
-        Tag::Double(v) => Some(f64::from_bits(*v)),
-        other => int(Some(other)).map(|v| v as f64),
-    }
-}
 
 fn string(t: Option<&Tag>) -> Option<String> {
     match t? {
@@ -380,7 +373,7 @@ pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: im
         }
     }
     if on(host, "storage_sort") {
-        merged.sort_by(|a, b| b.1.cmp(&a.1));
+        merged.sort_by_key(|e| std::cmp::Reverse(e.1));
     }
     let amount = num(host, if details { "storage_detailed" } else { "storage_normal" }).clamp(0.0, 512.0) as usize;
     let extra = merged.len().saturating_sub(amount);
@@ -483,7 +476,7 @@ fn fluid_lines(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], detail
                 (None, Some(w)) => cap.capacity(host, i, Some(w)),
                 _ => 0,
             };
-            let id = res.as_ref().map(|r| match r.fluid().clone() {
+            let id = res.as_ref().map(|r| match *r.fluid() {
                 FluidIdentity::Resolved(k) => k.id(host).unwrap_or_default().to_owned(),
                 FluidIdentity::Unresolved(u) => u.id(host),
                 _ => String::new(),
@@ -685,17 +678,15 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
             }
         }
         // MobSpawnerCooldownProvider: a trial spawner's next mob and cooldown.
-        "minecraft:trial_spawner" => {
-            if on(host, "mob_spawner") {
-                let next = cget(&data, "spawn_data").and_then(|t| tget(t, "entity")).and_then(|t| string(tget(t, "id")));
-                if let Some(id) = next {
-                    lines.push(Line::new().with(El::Title(tr("jade.spawner", "%s (%s)", &["{0}", &api::entity_name(&id)]))));
-                }
-                let now = level.game_time(host).unwrap_or(0);
-                let ends = int(cget(&data, "cooldown_ends_at")).unwrap_or(0);
-                if ends > now {
-                    lines.push(Line::text(tr("jade.trial_spawner_cd", "Cooldown: %s", &[&format!("§f{}", seconds_marker(ends - now))])));
-                }
+        "minecraft:trial_spawner" if on(host, "mob_spawner") => {
+            let next = cget(&data, "spawn_data").and_then(|t| tget(t, "entity")).and_then(|t| string(tget(t, "id")));
+            if let Some(id) = next {
+                lines.push(Line::new().with(El::Title(tr("jade.spawner", "%s (%s)", &["{0}", &api::entity_name(&id)]))));
+            }
+            let now = level.game_time(host).unwrap_or(0);
+            let ends = int(cget(&data, "cooldown_ends_at")).unwrap_or(0);
+            if ends > now {
+                lines.push(Line::text(tr("jade.trial_spawner_cd", "Cooldown: %s", &[&format!("§f{}", seconds_marker(ends - now))])));
             }
         }
         _ => {}
@@ -776,6 +767,6 @@ fn overlay(host: &mut dyn ServerHost, source: &CommandSource, invocation: &Comma
             told += 1;
         }
     }
-    let _ = host.commands().feedback(Text::literal(format!("Overlay {} for {told} players", if show { "shown" } else { "hidden" })));
+    let _ = host.commands().feedback(Text::literal(format!("Overlay {} for {told} players", if show { "shown" } else { "hidden" })), false);
     Some(told)
 }

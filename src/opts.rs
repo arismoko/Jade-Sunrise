@@ -229,11 +229,6 @@ pub fn num(host: &dyn Host, key: &str) -> f64 {
     opt(host, key).parse().unwrap_or(0.0)
 }
 
-/// Whether the server forces this option (`gui.jade.forced_plugin_config`).
-pub fn forced(host: &dyn Host, key: &str) -> bool {
-    ensure(host);
-    store(|s| s.overrides.contains_key(key))
-}
 
 /// Keeps a value and writes the file.
 pub fn set(host: &dyn Host, key: &str, value: &str) {
@@ -715,7 +710,7 @@ pub fn commas(n: i64) -> String {
     let digits = n.unsigned_abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);

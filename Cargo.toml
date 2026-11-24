@@ -7,3 +7,7 @@ edition = "2024"
 # The pinned SDK's API crate (`cargo sunrise-mod` fetches it into .sunrise/sdk/). Until Sunrise
 # publishes one, .sunrise/sdk/api is a link to a local sunrise-org/sunrise checkout.
 sunrise-mod-api = { path = ".sunrise/sdk/api/crates/sunrise-mod-api" }
+
+# `cargo sunrise-mod` builds with `feature = "<id>"` set for each optional dependency that is installed.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("guideme"))'] }

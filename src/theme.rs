@@ -116,7 +116,7 @@ fn color(s: &str) -> Option<u32> {
         return None;
     }
     let v = u32::from_str_radix(&full, 16).ok()?;
-    Some(if full.len() == 6 { 0xFF00_0000 | v } else { (v >> 8) | (v << 24) })
+    Some(if full.len() == 6 { 0xFF00_0000 | v } else { v.rotate_right(8) })
 }
 
 /// A chat style's parts, as much of it as the overlay's text can show.

@@ -1260,7 +1260,7 @@ impl Ui {
                 Some(0) | None => self.focus = Focus::Search,
                 Some(i) => self.focus_row(order[i - 1]),
             },
-            "key.keyboard.left" => self.to_nav(),
+            "key.keyboard.left" => self.focus_nav(),
             _ => {}
         }
     }
@@ -1285,7 +1285,7 @@ impl Ui {
             "key.keyboard.right" => cards.get(at + 1).copied(),
             "key.keyboard.left" => match at.checked_sub(1) {
                 Some(i) => cards.get(i).copied(),
-                None => return self.to_nav(),
+                None => return self.focus_nav(),
             },
             _ => {
                 // The rows of cards, and the same column of the next that has one.
@@ -1331,7 +1331,7 @@ impl Ui {
     }
 
     /// `OptionsNav.getCurrentEntry`: the focus on the section it is in.
-    fn to_nav(&mut self) {
+    fn focus_nav(&mut self) {
         let titles = self.titles();
         if titles.is_empty() {
             return;
@@ -1502,7 +1502,7 @@ impl Ui {
     /// A slider or a dragged overlay let go (mouseReleased).
     fn let_go(&mut self, game: &dyn ClientHost) {
         match self.drag {
-            Drag::Slider(row, _) => {
+            Drag::Slider(..) => {
                 opts::commit(game);
             }
             Drag::Overlay(_) => self.keep_position(game),
@@ -1718,7 +1718,6 @@ impl Ui {
             let tw = gfx::width(game, &text);
             batch.text_rgb(&text, [list[0] + ((list[2] - tw) / 2.0).floor(), list[1] + 10.0], 0xAAAAAA, true);
         }
-        ();
         // extractListSeparators.
         batch.fill([0.0, h - FOOTER, w, 1.0], 0x33FF_FFFF);
         batch.fill([0.0, h - FOOTER + 1.0, w, 1.0], 0xBF00_0000);
@@ -1924,7 +1923,7 @@ impl Ui {
     }
 
     /// `jade:navbar_background` and `inworld_navbar_background` (the same pixels), or their high_contrast versions.
-    fn draw_nav(&self, game: &dyn ClientHost, batch: &mut Gfx<'_>, m: [f32; 2], high_contrast: bool) {
+    fn draw_nav(&self, _game: &dyn ClientHost, batch: &mut Gfx<'_>, m: [f32; 2], high_contrast: bool) {
         let nav = [0.0, SEARCH_H, NAV_W, (self.size[1] - FOOTER - SEARCH_H).max(0.0)];
         if high_contrast {
             batch.fill([nav[0], nav[1], nav[2] - 2.0, nav[3]], 0x7000_0000);
@@ -1989,7 +1988,7 @@ impl Ui {
             // The box's inner width: text scrolled past its edges is cut there.
             let clipped = batch.clip([x + text_x, y, (w - text_x).max(0.0), h]);
             batch.text_rgb(&field.text, [x + text_x - shift, y + text_y], color, true);
-            if focused && self.opened.elapsed().as_millis() / 300 % 2 == 0 {
+            if focused && (self.opened.elapsed().as_millis() / 300).is_multiple_of(2) {
                 batch.fill([x + text_x - shift + caret, y + text_y - 1.0, 1.0, 10.0], 0xFFE0_E0E0);
             }
             if clipped {
@@ -2410,10 +2409,8 @@ impl Ui {
                     self.filter();
                 }
             }
-            Focus::Profile(i) => {
-                if self.names[i].key(key) {
-                    opts::set(game, &format!("profile_name_{i}"), &self.names[i].text);
-                }
+            Focus::Profile(i) if self.names[i].key(key) => {
+                opts::set(game, &format!("profile_name_{i}"), &self.names[i].text);
             }
             _ => {}
         }
@@ -2536,7 +2533,7 @@ fn card_span(size: [f32; 2]) -> (f32, f32) {
 
 /// `card_background`, `_hover`, `_expandable` and `_expandable_hover`, from their PNGs: the frame and fill stand a bleed
 /// outside the card, the frame's corners cut, and one with options lightens over its last seven rows.
-fn draw_card_background(game: &dyn ClientHost, batch: &mut Gfx<'_>, [x, y, w, h]: [f32; 4], expandable: bool, hovered: bool) {
+fn draw_card_background(_game: &dyn ClientHost, batch: &mut Gfx<'_>, [x, y, w, h]: [f32; 4], expandable: bool, hovered: bool) {
     const SHADE: [u32; 7] = [0xA116_1A24, 0xA219_1E28, 0xA31C_222D, 0xA420_2733, 0xA525_2D3A, 0xA62A_3442, 0xA72F_3A4A];
     const SHADE_HOVER: [u32; 7] = [0xB81F_2634, 0xB922_2A39, 0xBA26_2F3F, 0xBB2B_3546, 0xBC30_3B4D, 0xBE36_4356, 0xBF3C_4B60];
     let (frame, fill) = match (expandable, hovered) {
@@ -2570,7 +2567,7 @@ pub(crate) enum ToggleState {
 }
 
 /// ToggleButton's `toggle/<on|off>_<state>` sprite, from its PNG, as runs of fills: `(x0, y0, x1, y1, ARGB)`, inclusive.
-fn draw_toggle(game: &dyn ClientHost, batch: &mut Gfx<'_>, [x, y]: [f32; 2], on: bool, state: ToggleState) {
+fn draw_toggle(_game: &dyn ClientHost, batch: &mut Gfx<'_>, [x, y]: [f32; 2], on: bool, state: ToggleState) {
     const INK: u32 = 0xFF1E_1E1F;
     const SHADOW: u32 = 0xFF58_585A;
     // The knob's lights: its left and top edge, its right and lower edge, its face.
