@@ -505,20 +505,15 @@ const TOOL_TYPES: [(&[&str], bool); 6] = [
     (&["minecraft:shears"], false),
 ];
 
-/// A vanilla tool's Tool component rule as tags: the tier's `incorrect_for_<tier>_tool` denies, its kind's
-/// `mineable/<kind>` mines and drops (a sword: cobweb; shears: what the server's loot tables ask shears of).
+/// Whether `tool` harvests `block`: `facts::shearable` for loot-table-shearable blocks, otherwise the game's own
+/// `ItemStack.isCorrectToolForDrops` rule for a default stack of `tool`.
 fn tool_correct(h: &dyn ClientHost, tool: &str, block: &str) -> bool {
-    let Some(key) = bkey(h, block) else { return false };
-    let path = tool.strip_prefix("minecraft:").unwrap_or(tool);
-    let tag = |t: &str| h.block_in_tag(key, t) == Some(true);
-    if path == "shears" {
-        return crate::facts::shearable(block) || matches!(block, "minecraft:cobweb" | "minecraft:redstone_wire" | "minecraft:tripwire") || tag("minecraft:leaves") || tag("minecraft:wool");
+    if tool == "minecraft:shears" && crate::facts::shearable(block) {
+        return true;
     }
-    let Some((tier, kind)) = path.rsplit_once('_') else { return false };
-    if kind == "sword" {
-        return block == "minecraft:cobweb";
-    }
-    tag(&format!("minecraft:mineable/{kind}")) && !tag(&format!("minecraft:incorrect_for_{tier}_tool"))
+    let Some(item_key) = gfx::item_key(h, tool) else { return false };
+    let Some(state) = bkey(h, block).and_then(|k| h.block_state_default(k)) else { return false };
+    h.block_states().is_correct_tool_for_drops(&ItemStack::of(item_key), state).unwrap_or(false)
 }
 
 /// The tick the cache was filled on, and each block's harvest tools.
@@ -554,15 +549,11 @@ fn harvest_tools(h: &dyn ClientHost, block: &str, insta: bool) -> Vec<String> {
 }
 
 /// The held item's correctness for a block's drops (`ItemStack.isCorrectToolForDrops`), as the game answers it for
-/// the held stack: a mod's tool counts by its own `minecraft:tool` rules. Where the game has no answer, the vanilla
-/// tools' rules as tags.
+/// the held stack: a mod's tool counts by its own `minecraft:tool` rules.
 fn held_correct(h: &dyn ClientHost, block: &str) -> bool {
     let Some(held) = me(h).and_then(|(_, l)| l?.with_hand_item(h, Hand::Main, |s| s.project()).flatten()) else { return false };
-    let state = bkey(h, block).and_then(|k| h.block_state_default(k));
-    if let Some(correct) = state.and_then(|s| h.block_states().is_correct_tool_for_drops(&held, s)) {
-        return correct;
-    }
-    tool_correct(h, held.item().id(h).unwrap_or_default(), block)
+    let Some(state) = bkey(h, block).and_then(|k| h.block_state_default(k)) else { return false };
+    h.block_states().is_correct_tool_for_drops(&held, state).unwrap_or(false)
 }
 
 /// `BlockState.requiresCorrectToolForDrops()` as the game answers it (a mod's block too).
