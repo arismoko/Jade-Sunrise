@@ -233,11 +233,10 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
                 name = format!("{name} {}", tr(&format!("potion.potency.{}", eff.amplifier), &roman(eff.amplifier + 1), &[]));
             }
             let time = if eff.duration < 0 { tr("effect.duration.infinite", "∞", &[]) } else { tick_duration(i64::from(eff.duration)) };
-            // MobEffect.getCategory: vanilla's harmful and neutral ones (the category isn't readable on the fork).
-            let color = match path {
-                "slowness" | "mining_fatigue" | "instant_damage" | "nausea" | "blindness" | "hunger" | "weakness" | "poison" | "wither" | "levitation" | "unluck" | "bad_omen" | "darkness" | "wind_charged" | "weaving" | "oozing" | "infested" | "raid_omen" | "trial_omen" => "§c",
-                "glowing" => "§f",
-                _ if ns == "minecraft" => "§a",
+            // MobEffect.getCategory: IThemeHelper's success, danger and info colours.
+            let color = match eff.id.category(host) {
+                Some(EffectCategory::Beneficial) => "§a",
+                Some(EffectCategory::Harmful) => "§c",
                 _ => "§f",
             };
             lines.push(Line::text(format!("{color}{}", tr("jade.potion", "%s (%s)", &[&name, &time]))));
