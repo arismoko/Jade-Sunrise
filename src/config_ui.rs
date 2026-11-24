@@ -1726,9 +1726,9 @@ impl Ui {
         if most > 0.0 {
             let handle = self.bar_height(list, most);
             let bar_x = w - 6.0;
-            batch.nine_raw("gui/sprites/widget/scroller_background", [bar_x, list[1], 6.0, list[3]], u32::MAX);
+            batch.nine_raw("widget/scroller_background", [bar_x, list[1], 6.0, list[3]], u32::MAX);
             let y = list[1] + self.scroll / most * (list[3] - handle);
-            batch.nine_raw("gui/sprites/widget/scroller", [bar_x, y.floor(), 6.0, handle], u32::MAX);
+            batch.nine_raw("widget/scroller", [bar_x, y.floor(), 6.0, handle], u32::MAX);
         }
         let done = done_rect(self.size);
         batch.button([done[0], done[1], done[2], done[3]], &Text::literal(tr(game, "gui.done", "Done")), true, hit(done, m));
@@ -2014,7 +2014,7 @@ impl Ui {
             Kind::Profile(i) => {
                 let focused = self.focus == Focus::Profile(i);
                 if focused || (enabled && hit(rects.name, m)) {
-                    let sprite = if focused { "gui/sprites/widget/text_field_highlighted" } else { "gui/sprites/widget/text_field" };
+                    let sprite = if focused { "widget/text_field_highlighted" } else { "widget/text_field" };
                     batch.nine_raw(sprite, [rects.name[0], rects.name[1], rects.name[2], rects.name[3]], u32::MAX);
                 }
                 let active = enabled && opts::opt(game, "profile") == i.to_string();

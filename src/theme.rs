@@ -394,13 +394,10 @@ pub struct Theme {
     sprite_mapping: HashMap<String, String>,
 }
 
-/// A `namespace:path` sprite id as the GUI atlas names it.
+/// A `namespace:path` sprite id as the GUI atlas names it: vanilla's by its path (`hud/heart/full`), a mod's
+/// with its namespace (`jade:progress`).
 fn atlas_name(id: &str) -> String {
-    match id.split_once(':') {
-        Some(("minecraft", path)) => format!("gui/sprites/{path}"),
-        Some((ns, path)) => format!("{ns}:gui/sprites/{path}"),
-        None => format!("gui/sprites/{id}"),
-    }
+    id.strip_prefix("minecraft:").unwrap_or(id).to_owned()
 }
 
 impl Theme {

@@ -1,6 +1,6 @@
 //! Drawing on Sunrise's `DrawContext`: legacy `§` text as styled components, scaled text through `gui_paint`'s pose,
 //! items by id, Jade's own sprites (shipped in `assets/jade/textures/gui/sprites`, so in the GUI atlas as
-//! `jade:gui/sprites/<name>`), and a transform for the overlay's Display Scale and its fade.
+//! `jade:<name>`), and a transform for the overlay's Display Scale and its fade.
 use mod_api::client::hud_layout::{GuiDraw, PoseOp};
 use mod_api::*;
 use mod_api::text::TextStyle;
@@ -319,11 +319,11 @@ impl Gfx<'_> {
     pub fn button(&mut self, rect: [f32; 4], label: &Text, active: bool, hover: bool) {
         let [x, y, w, h] = rect;
         let sprite = if !active {
-            "gui/sprites/widget/button_disabled"
+            "widget/button_disabled"
         } else if hover {
-            "gui/sprites/widget/button_highlighted"
+            "widget/button_highlighted"
         } else {
-            "gui/sprites/widget/button"
+            "widget/button"
         };
         self.d.gui_nine_slice(sprite, rect, 0xFFFF_FFFF);
         let color = if active { 0xFFFF_FFFF } else { 0xFFA0_A0A0 };
@@ -338,9 +338,9 @@ impl Gfx<'_> {
     /// AbstractSliderButton: the track, the handle at `t`, the value centred.
     #[allow(clippy::too_many_arguments)]
     pub fn slider(&mut self, x: f32, y: f32, w: f32, label: &Text, t: f32, hover: bool, active: bool, dragging: bool) {
-        let track = if hover || dragging { "gui/sprites/widget/slider_highlighted" } else { "gui/sprites/widget/slider" };
+        let track = if hover || dragging { "widget/slider_highlighted" } else { "widget/slider" };
         self.d.gui_nine_slice(track, [x, y, w, 20.0], 0xFFFF_FFFF);
-        let handle = if (hover || dragging) && active { "gui/sprites/widget/slider_handle_highlighted" } else { "gui/sprites/widget/slider_handle" };
+        let handle = if (hover || dragging) && active { "widget/slider_handle_highlighted" } else { "widget/slider_handle" };
         let hx = x + (t.clamp(0.0, 1.0) * (w - 8.0)).floor();
         self.d.gui_nine_slice(handle, [hx, y, 8.0, 20.0], 0xFFFF_FFFF);
         let tw = self.h.text_width(label) as f32;
