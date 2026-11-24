@@ -253,10 +253,6 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
         if let Some(pose) = pose {
             lines.push(Line::text(tr("jade.access.entity.pose", "Pose: %s", &[&tr(&format!("jade.access.entity.pose.{pose}"), "", &[])])));
         }
-        let riders = e.passengers(host).map_or(0, |v| v.len());
-        if riders > 0 {
-            lines.push(Line::text(tr("jade.access.entity.passengers", "Passengers: {0}", &[&riders.to_string()])));
-        }
         match e.leash_holder(host) {
             Some(LeashHolder::Knot(k)) => lines.push(Line::text(tr("jade.access.entity.leashed_to", "Leashed to: %s", &[&format!("{} {} {}", k[0], k[1], k[2])]))),
             Some(LeashHolder::Entity(o)) => {
@@ -264,6 +260,36 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
                 lines.push(Line::text(tr("jade.access.entity.leashed_to", "Leashed to: %s", &[&name])));
             }
             _ => {}
+        }
+        // Leashable.leashableLeashedTo: entities leashed to this target within 15 blocks.
+        if let Some(at) = e.position(host) {
+            let my_id = e.id();
+            let my_block = (kind == "minecraft:leash_knot").then(|| e.block_position(host)).flatten();
+            let shared: &dyn ServerHost = &*host;
+            let mut leashing: Vec<String> = Vec::new();
+            let min = [at[0] - 15.0, at[1] - 15.0, at[2] - 15.0];
+            let max = [at[0] + 15.0, at[1] + 15.0, at[2] + 15.0];
+            let _ = level.visit_entities_in(shared, min, max, &mut |other| {
+                if other.id() == my_id {
+                    return std::ops::ControlFlow::Continue(());
+                }
+                let attached = match other.leash_holder(shared) {
+                    Some(LeashHolder::Entity(holder)) => holder.id() == my_id,
+                    Some(LeashHolder::Knot(k)) => my_block == Some(k),
+                    _ => false,
+                };
+                if attached {
+                    let name = other.name(shared).filter(|n| !n.is_empty()).unwrap_or_else(|| {
+                        let okind = other.kind(shared).and_then(|k| k.id(shared).map(|n| n.as_str().to_owned())).unwrap_or_default();
+                        entity_name(&okind)
+                    });
+                    leashing.push(name);
+                }
+                std::ops::ControlFlow::Continue(())
+            });
+            if !leashing.is_empty() {
+                lines.push(Line::text(tr("jade.access.entity.is_leashing", "is Leashing: %s", &[&leashing.join(", ")])));
+            }
         }
     }
     // VillagerProfessionProvider: the profession, and its level for one with a job.

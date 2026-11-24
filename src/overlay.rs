@@ -1160,7 +1160,14 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
             vanilla_block(h, *pos, block, real, state, details, &mut lines);
             Target::Block { pos: *pos, block: block.clone(), state: state.clone(), hit: *hit }
         }
-        Seen::Entity { id, .. } => Target::Entity { id: *id, kind: kind.clone().unwrap_or_default() },
+        Seen::Entity { id, .. } => {
+            if access(h, "access_entity")
+                && let Some(riders) = h.entity(*id).and_then(|e| e.passengers(h)).map(|v| v.len()).filter(|&n| n > 0)
+            {
+                lines.push(Line::text(trf(h, "jade.access.entity.passengers", "Passengers: {0}", &[&riders.to_string()])));
+            }
+            Target::Entity { id: *id, kind: kind.clone().unwrap_or_default() }
+        }
     };
     for p in api::registry(|r| r.client.clone()) {
         p(h, &target, &mut lines);
