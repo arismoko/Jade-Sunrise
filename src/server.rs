@@ -819,7 +819,7 @@ fn vanilla_block(
             )));
         } else if block == "minecraft:calibrated_sculk_sensor" {
             let facing = level.block_property(host, pos, "facing");
-            let back = match facing.as_deref() {
+            let back = match facing {
                 Some("north") => (Direction::South, [0, 0, 1]),
                 Some("south") => (Direction::North, [0, 0, -1]),
                 Some("west") => (Direction::East, [1, 0, 0]),
@@ -1094,7 +1094,7 @@ fn vanilla_block(
     }
     // HopperLockProvider: a locked hopper's title.
     if block == "minecraft:hopper"
-        && level.block_property(host, pos, "enabled").as_deref() == Some("false")
+        && level.block_property(host, pos, "enabled") == Some("false")
         && on(host, "redstone")
     {
         lines.push(Line::new().with(El::Title(tr("jade.access.block.locked", "Locked {0}", &[]))));
