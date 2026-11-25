@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Rebuilt against Sunrise Dev 1: scoped GUI drawing, `/jadec` as a client command with its own executor, config files
+  through `config/`, fluid, tag, passenger and effect reads on the current host API.
+
 ## 26.3.11 (2026-11-24)
 
 - Fluids: mod fluids and their cauldrons are recognised, fluids are drawn with their own texture and name, and flowing

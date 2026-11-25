@@ -26,14 +26,22 @@ static RULE: OnceLock<IntGameRuleKey> = OnceLock::new();
 
 /// `register`: declares the rule.
 pub fn register_rules(r: &mut dyn Registrar) {
-    if let Ok(key) = r.game_rule_int("max_position_deviation", "minecraft:player", RULE_DEFAULT, 0, 1000) {
+    if let Ok(key) = r.game_rule_int(
+        "max_position_deviation",
+        "minecraft:player",
+        RULE_DEFAULT,
+        0,
+        1000,
+    ) {
         let _ = RULE.set(key);
     }
 }
 
 /// The rule's value in `level`'s world (its default when it can't be read).
 fn max_deviation(host: &dyn Host, level: LevelRef) -> i32 {
-    RULE.get().and_then(|key| level.game_rule_int(host, *key)).unwrap_or(RULE_DEFAULT)
+    RULE.get()
+        .and_then(|key| level.game_rule_int(host, *key))
+        .unwrap_or(RULE_DEFAULT)
 }
 
 static RATES: Mutex<Option<HashMap<u128, (std::time::Instant, u32)>>> = Mutex::new(None);
@@ -64,7 +72,9 @@ fn request_allowed(player: u128) -> bool {
 }
 
 fn cget<'a>(c: &'a Compound, key: &str) -> Option<&'a Tag> {
-    c.iter().find(|(k, _)| k.to_string_lossy() == key).map(|(_, v)| v)
+    c.iter()
+        .find(|(k, _)| k.to_string_lossy() == key)
+        .map(|(_, v)| v)
 }
 
 fn tget<'a>(t: &'a Tag, key: &str) -> Option<&'a Tag> {
@@ -83,7 +93,6 @@ fn int(t: Option<&Tag>) -> Option<i64> {
     }
 }
 
-
 fn string(t: Option<&Tag>) -> Option<String> {
     match t? {
         Tag::String(s) => s.to_string().ok(),
@@ -94,7 +103,10 @@ fn string(t: Option<&Tag>) -> Option<String> {
 /// An item stack's id, count and optional component patch as saved (`{id, count, components}`).
 fn stack_of(t: &Tag) -> Option<(String, u32, Option<Compound>)> {
     let id = string(tget(t, "id"))?;
-    let count = int(tget(t, "count")).or_else(|| int(tget(t, "Count"))).unwrap_or(1).max(0) as u32;
+    let count = int(tget(t, "count"))
+        .or_else(|| int(tget(t, "Count")))
+        .unwrap_or(1)
+        .max(0) as u32;
     if id == "minecraft:air" || count == 0 {
         return None;
     }
@@ -107,23 +119,41 @@ fn stack_of(t: &Tag) -> Option<(String, u32, Option<Compound>)> {
 
 /// A saved `Items` list: each stack with its slot and optional component patch.
 fn items_of(c: &Compound, key: &str) -> Vec<(i64, String, u32, Option<Compound>)> {
-    let Some(Tag::List(list)) = cget(c, key) else { return Vec::new() };
-    list.iter().enumerate().filter_map(|(i, t)| {
-        let (id, n, comp) = stack_of(t)?;
-        Some((int(tget(t, "Slot")).unwrap_or(i as i64), id, n, comp))
-    }).collect()
+    let Some(Tag::List(list)) = cget(c, key) else {
+        return Vec::new();
+    };
+    list.iter()
+        .enumerate()
+        .filter_map(|(i, t)| {
+            let (id, n, comp) = stack_of(t)?;
+            Some((int(tget(t, "Slot")).unwrap_or(i as i64), id, n, comp))
+        })
+        .collect()
 }
 
 /// Jade.isOutOfReach: the hand's range and the deviation, from where the server has the player; another dimension is
 /// always out.
-fn out_of_reach(host: &dyn Host, player: PlayerRef, level: LevelRef, at: [f64; 3], base: f64) -> bool {
-    let Some(pl) = player.level(host) else { return true };
+fn out_of_reach(
+    host: &dyn Host,
+    player: PlayerRef,
+    level: LevelRef,
+    at: [f64; 3],
+    base: f64,
+) -> bool {
+    let Some(pl) = player.level(host) else {
+        return true;
+    };
     if pl != level {
         return true;
     }
-    let Some(p) = player.entity().position(host) else { return true };
+    let Some(p) = player.entity().position(host) else {
+        return true;
+    };
     let most = base + f64::from(max_deviation(host, level));
-    (0..3).map(|i| (p[i].floor() - at[i].floor()).powi(2)).sum::<f64>() > most * most
+    (0..3)
+        .map(|i| (p[i].floor() - at[i].floor()).powi(2))
+        .sum::<f64>()
+        > most * most
 }
 
 /// `net_from_client` on `jade:request`.
@@ -137,7 +167,11 @@ pub fn from_client(host: &mut dyn ServerHost, player: u128, data: &[u8]) {
         // ServerHandshakePacket.shearableBlocks: the blocks the server's loot tables ask shears of.
         if let Some(p) = host.player(player) {
             let msg = crate::facts::shears_message(&*host);
-            let _ = p.send_payload(host, &PayloadId(NET_DATA.into()), PayloadBytes(msg.into_bytes()));
+            let _ = p.send_payload(
+                host,
+                &PayloadId(NET_DATA.into()),
+                PayloadBytes(msg.into_bytes()),
+            );
         }
         return;
     }
@@ -158,7 +192,11 @@ pub fn from_client(host: &mut dyn ServerHost, player: u128, data: &[u8]) {
         }
     });
     if let Some(answer) = answer {
-        let _ = p.send_payload(host, &PayloadId(NET_DATA.into()), PayloadBytes(answer.into_bytes()));
+        let _ = p.send_payload(
+            host,
+            &PayloadId(NET_DATA.into()),
+            PayloadBytes(answer.into_bytes()),
+        );
     }
 }
 
@@ -183,15 +221,27 @@ fn lines_out(head: String, lines: Vec<Line>) -> String {
 }
 
 /// `b x y z details slot hx hy hz extra dist`: a block's lines, or the pick when a special entity is nearer.
-fn block_request(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: LevelRef, text: &str) -> Option<String> {
+fn block_request(
+    host: &mut dyn ServerHost,
+    player: u128,
+    p: PlayerRef,
+    level: LevelRef,
+    text: &str,
+) -> Option<String> {
     let w: Vec<&str> = text.split(' ').collect();
     let n = |i: usize| w.get(i).and_then(|v| v.parse::<i64>().ok());
-    let f = |i: usize| w.get(i).and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite());
+    let f = |i: usize| {
+        w.get(i)
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|v| v.is_finite())
+    };
     let pos = [n(0)? as i32, n(1)? as i32, n(2)? as i32];
     let details = n(3).unwrap_or(0) != 0;
     let slot = n(4).unwrap_or(-1) as i32;
     let hit = match (n(5), n(6), n(7)) {
-        (Some(x), Some(y), Some(z)) => Some([x as f64 / 4096.0, y as f64 / 4096.0, z as f64 / 4096.0]),
+        (Some(x), Some(y), Some(z)) => {
+            Some([x as f64 / 4096.0, y as f64 / 4096.0, z as f64 / 4096.0])
+        }
         _ => None,
     };
     // The hit must be on (or by) the block it names.
@@ -205,9 +255,21 @@ fn block_request(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: L
     if out_of_reach(host, p, level, pos.map(f64::from), 4.5) || !level.is_loaded(host, pos) {
         return None;
     }
-    let block = level.block(host, pos)?.id(host).unwrap_or_default().to_owned();
+    let block = level
+        .block(host, pos)?
+        .id(host)
+        .unwrap_or_default()
+        .to_owned();
     let dimension = p.dimension(host).map(|d| d.to_string()).unwrap_or_default();
-    let req = Request { player, dimension, pos, block: block.clone(), entity: None, details, hit };
+    let req = Request {
+        player,
+        dimension,
+        pos,
+        block: block.clone(),
+        entity: None,
+        details,
+        hit,
+    };
     REQUEST_HIT.with_borrow_mut(|h| *h = hit);
     let mut lines = Vec::new();
     vanilla_block(host, &req, p, level, slot, &mut lines);
@@ -215,11 +277,20 @@ fn block_request(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: L
         provider(host, &req, &mut lines);
     }
     REQUEST_HIT.with_borrow_mut(|h| *h = None);
-    Some(lines_out(format!("B {} {} {}", pos[0], pos[1], pos[2]), lines))
+    Some(lines_out(
+        format!("B {} {} {}", pos[0], pos[1], pos[2]),
+        lines,
+    ))
 }
 
 /// `e id details`: the entity on the player's crosshair.
-fn entity_request(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: LevelRef, text: &str) -> Option<String> {
+fn entity_request(
+    host: &mut dyn ServerHost,
+    player: u128,
+    p: PlayerRef,
+    level: LevelRef,
+    text: &str,
+) -> Option<String> {
     let w: Vec<&str> = text.split(' ').collect();
     let id: u32 = w.first()?.parse().ok()?;
     let details = w.get(1) == Some(&"1");
@@ -238,9 +309,20 @@ fn entity_request(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: 
 }
 
 /// `n extra details`: nothing on the client's crosshair; the server's pick.
-fn pick_request(host: &mut dyn ServerHost, _player: u128, p: PlayerRef, level: LevelRef, text: &str) -> Option<String> {
+fn pick_request(
+    host: &mut dyn ServerHost,
+    _player: u128,
+    p: PlayerRef,
+    level: LevelRef,
+    text: &str,
+) -> Option<String> {
     let w: Vec<&str> = text.split(' ').collect();
-    let extra = w.first().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite()).unwrap_or(0.0).clamp(0.0, 20.0);
+    let extra = w
+        .first()
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v| v.is_finite())
+        .unwrap_or(0.0)
+        .clamp(0.0, 20.0);
     let details = w.get(1) == Some(&"1");
     Some(pick(host, p, level, extra, f64::INFINITY, details).unwrap_or_else(|| "N".to_owned()))
 }
@@ -248,28 +330,60 @@ fn pick_request(host: &mut dyn ServerHost, _player: u128, p: PlayerRef, level: L
 /// RayTracing.getEntityHitResult for what the client's crosshair doesn't pick: dropped items, falling blocks and
 /// displays (a display's box widened by 0.3, as Jade's), and with Extended Reach anything past the hand's reach.
 /// From where the server has the player's eyes, nearer than the client's block.
-fn pick(host: &mut dyn ServerHost, p: PlayerRef, level: LevelRef, extra: f64, block_dist: f64, details: bool) -> Option<String> {
+fn pick(
+    host: &mut dyn ServerHost,
+    p: PlayerRef,
+    level: LevelRef,
+    extra: f64,
+    block_dist: f64,
+    details: bool,
+) -> Option<String> {
     let me = p.entity();
     let eye = me.eye_position(host)?;
     let look = me.view_vector(host)?;
-    let reach = host.living(me).and_then(|l| l.attribute_value(host, "minecraft:entity_interaction_range")).unwrap_or(3.0) + extra;
-    let to = [eye[0] + look[0] * reach, eye[1] + look[1] * reach, eye[2] + look[2] * reach];
+    let reach = host
+        .living(me)
+        .and_then(|l| l.attribute_value(host, "minecraft:entity_interaction_range"))
+        .unwrap_or(3.0)
+        + extra;
+    let to = [
+        eye[0] + look[0] * reach,
+        eye[1] + look[1] * reach,
+        eye[2] + look[2] * reach,
+    ];
     // The candidates along the ray (boxes grown by Jade's 0.3, so a display, which has none, is among them), then
     // each one's own box (a display's that 0.3 round its position) met by the ray, nearest first.
     let hits = level.ray_trace_entities(host, eye, to, 0.3, Some(me))?;
     let mut best: Option<(f64, EntityRef)> = None;
     for hit in hits {
-        if (host.projectile(hit.entity).is_some() || host.fishing_hook(hit.entity).is_some()) && hit.entity.tick_count(host).is_some_and(|t| t <= 10) {
+        if (host.projectile(hit.entity).is_some() || host.fishing_hook(hit.entity).is_some())
+            && hit.entity.tick_count(host).is_some_and(|t| t <= 10)
+        {
             continue;
         }
-        let Some(kind) = hit.entity.kind(host).map(|k| k.id(&*host).map(|n| n.as_str().to_owned()).unwrap_or_default()) else { continue };
-        let display = matches!(kind.as_str(), "minecraft:block_display" | "minecraft:item_display");
-        let special = display || matches!(kind.as_str(), "minecraft:item" | "minecraft:falling_block");
+        let Some(kind) = hit.entity.kind(host).map(|k| {
+            k.id(&*host)
+                .map(|n| n.as_str().to_owned())
+                .unwrap_or_default()
+        }) else {
+            continue;
+        };
+        let display = matches!(
+            kind.as_str(),
+            "minecraft:block_display" | "minecraft:item_display"
+        );
+        let special =
+            display || matches!(kind.as_str(), "minecraft:item" | "minecraft:falling_block");
         if !special && extra <= 0.0 {
             continue;
         }
         let bounds = if display {
-            hit.entity.position(host).map(|c| [[c[0] - 0.3, c[1] - 0.3, c[2] - 0.3], [c[0] + 0.3, c[1] + 0.3, c[2] + 0.3]])
+            hit.entity.position(host).map(|c| {
+                [
+                    [c[0] - 0.3, c[1] - 0.3, c[2] - 0.3],
+                    [c[0] + 0.3, c[1] + 0.3, c[2] + 0.3],
+                ]
+            })
         } else {
             hit.entity.bounding_box(host)
         };
@@ -284,11 +398,18 @@ fn pick(host: &mut dyn ServerHost, p: PlayerRef, level: LevelRef, extra: f64, bl
     // Jade's pick sees them (a box 0.3 round the display's position).
     let shared: &dyn ServerHost = &*host;
     let _ = level.visit_all_entities(shared, &mut |e| {
-        let Some(c) = e.position(shared) else { return std::ops::ControlFlow::Continue(()) };
-        if (0..3).map(|i| (c[i] - eye[i]).powi(2)).sum::<f64>() > (reach + 1.0).powi(2) || shared.display(e).is_none() {
+        let Some(c) = e.position(shared) else {
+            return std::ops::ControlFlow::Continue(());
+        };
+        if (0..3).map(|i| (c[i] - eye[i]).powi(2)).sum::<f64>() > (reach + 1.0).powi(2)
+            || shared.display(e).is_none()
+        {
             return std::ops::ControlFlow::Continue(());
         }
-        let (lo, hi) = ([c[0] - 0.3, c[1] - 0.3, c[2] - 0.3], [c[0] + 0.3, c[1] + 0.3, c[2] + 0.3]);
+        let (lo, hi) = (
+            [c[0] - 0.3, c[1] - 0.3, c[2] - 0.3],
+            [c[0] + 0.3, c[1] + 0.3, c[2] + 0.3],
+        );
         if let Some(t) = ray_box(eye, look, lo, hi, reach.min(block_dist))
             && best.is_none_or(|(b, _)| t < b)
         {
@@ -322,26 +443,62 @@ fn ray_box(eye: [f64; 3], dir: [f64; 3], lo: [f64; 3], hi: [f64; 3], reach: f64)
 
 /// An entity's answer: `E id picked dist kind`, its custom name (or nothing), its icon item, its lines.
 #[allow(clippy::too_many_arguments)]
-fn describe(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: LevelRef, e: EntityRef, details: bool, picked: bool, d: f64) -> Option<String> {
-    let kind = e.kind(host)?.id(&*host).map(|n| n.as_str().to_owned()).unwrap_or_default();
+fn describe(
+    host: &mut dyn ServerHost,
+    player: u128,
+    p: PlayerRef,
+    level: LevelRef,
+    e: EntityRef,
+    details: bool,
+    picked: bool,
+    d: f64,
+) -> Option<String> {
+    let kind = e
+        .kind(host)?
+        .id(&*host)
+        .map(|n| n.as_str().to_owned())
+        .unwrap_or_default();
     let nbt = e.nbt(host).unwrap_or_default();
     let name = if cget(&nbt, "CustomName").is_some() {
         e.name(host).unwrap_or_default().replace('\n', " ")
     } else if kind == "minecraft:item" {
         // ItemEntity's name is its stack's.
-        cget(&nbt, "Item").and_then(stack_of).map(|(id, _, _)| api::item_name(&id)).unwrap_or_default()
+        cget(&nbt, "Item")
+            .and_then(stack_of)
+            .map(|(id, _, _)| api::item_name(&id))
+            .unwrap_or_default()
     } else {
         String::new()
     };
     // BlockDisplayProvider and ItemDisplayProvider: what a display shows, through the displays API.
-    let shown = host.display(e).and_then(|d| match d.item(host) {
-        Some(stack) => Some((stack.item().id(host).unwrap_or_default().to_owned(), api::stack_components(&stack))),
-        None => d.block_state(host).and_then(|s| host.block_item(s.block())).map(|i| (i.id(host).unwrap_or_default().to_owned(), None)),
+    let shown = host.display(e).and_then(|d| {
+        match d.with_item(host, |stack| {
+            (
+                stack.item().id(host).unwrap_or_default().to_owned(),
+                stack.project().and_then(|st| api::stack_components(&st)),
+            )
+        }) {
+            Some(shown) => Some(shown),
+            None => d
+                .block_state(host)
+                .and_then(|s| host.block_item(s.block()))
+                .map(|i| (i.id(host).unwrap_or_default().to_owned(), None)),
+        }
     });
-    let (icon, icon_comp) = shown.filter(|(id, _)| id != "minecraft:air").unwrap_or_else(|| entity_icon(host, &kind, &nbt));
+    let (icon, icon_comp) = shown
+        .filter(|(id, _)| id != "minecraft:air")
+        .unwrap_or_else(|| entity_icon(host, &kind, &nbt));
     let dimension = p.dimension(host).map(|d| d.to_string()).unwrap_or_default();
     let pos = e.block_position(host).unwrap_or([0; 3]);
-    let req = Request { player, dimension, pos, block: String::new(), entity: Some(e.id()), details, hit: None };
+    let req = Request {
+        player,
+        dimension,
+        pos,
+        block: String::new(),
+        entity: Some(e.id()),
+        details,
+        hit: None,
+    };
     let mut lines = Vec::new();
     crate::entities::lines(host, &req, p, level, e, &kind, &nbt, &mut lines);
     for provider in api::registry(|r| r.server_entity.clone()) {
@@ -352,31 +509,69 @@ fn describe(host: &mut dyn ServerHost, player: u128, p: PlayerRef, level: LevelR
         _ => icon,
     };
     let projectile = u8::from(host.projectile(e).is_some() || host.fishing_hook(e).is_some());
-    let head = format!("E {} {} {d} {kind} {projectile}\n{name}\n{icon_line}", e.id(), u8::from(picked));
+    let head = format!(
+        "E {} {} {d} {kind} {projectile}\n{name}\n{icon_line}",
+        e.id(),
+        u8::from(picked)
+    );
     Some(lines_out(head, lines))
 }
 
 /// Entity.getPickResult as the icon: a mob's spawn egg, the framed item, the vehicle's item, a dropped item's own.
 fn entity_icon(host: &dyn Host, kind: &str, nbt: &Compound) -> (String, Option<Compound>) {
-    let item_of = |key: &str| cget(nbt, key).and_then(stack_of).map(|(id, _, comp)| (id, comp));
+    let item_of = |key: &str| {
+        cget(nbt, key)
+            .and_then(stack_of)
+            .map(|(id, _, comp)| (id, comp))
+    };
     match kind {
         "minecraft:item" => item_of("Item").unwrap_or_default(),
-        "minecraft:item_frame" | "minecraft:glow_item_frame" => item_of("Item").unwrap_or_else(|| (kind.to_owned(), None)),
+        "minecraft:item_frame" | "minecraft:glow_item_frame" => {
+            item_of("Item").unwrap_or_else(|| (kind.to_owned(), None))
+        }
         "minecraft:item_display" => item_of("item").unwrap_or_default(),
-        "minecraft:block_display" => (cget(nbt, "block_state").and_then(|t| string(tget(t, "Name"))).unwrap_or_default(), None),
-        "minecraft:falling_block" => (cget(nbt, "BlockState").and_then(|t| string(tget(t, "Name"))).unwrap_or_default(), None),
-        "minecraft:painting" | "minecraft:armor_stand" | "minecraft:end_crystal" | "minecraft:leash_knot" => (kind.to_owned(), None),
-        k if k.ends_with("minecart") || k.ends_with("boat") || k.ends_with("raft") => (k.to_owned(), None),
+        "minecraft:block_display" => (
+            cget(nbt, "block_state")
+                .and_then(|t| string(tget(t, "Name")))
+                .unwrap_or_default(),
+            None,
+        ),
+        "minecraft:falling_block" => (
+            cget(nbt, "BlockState")
+                .and_then(|t| string(tget(t, "Name")))
+                .unwrap_or_default(),
+            None,
+        ),
+        "minecraft:painting"
+        | "minecraft:armor_stand"
+        | "minecraft:end_crystal"
+        | "minecraft:leash_knot" => (kind.to_owned(), None),
+        k if k.ends_with("minecart") || k.ends_with("boat") || k.ends_with("raft") => {
+            (k.to_owned(), None)
+        }
         _ => {
             let egg = format!("{kind}_spawn_egg");
-            if host.item_keys().into_iter().any(|k| k.id(host) == Some(egg.as_str())) { (egg, None) } else { (String::new(), None) }
+            if host
+                .item_keys()
+                .into_iter()
+                .any(|k| k.id(host) == Some(egg.as_str()))
+            {
+                (egg, None)
+            } else {
+                (String::new(), None)
+            }
         }
     }
 }
 
 /// ItemStorageProvider: stacks grouped by full item + components, as many rows as its amounts allow: a few types by
 /// name (Show Name Threshold), the rest as icons.
-pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: impl IntoIterator<Item = (String, u32, Option<Compound>)>) {
+pub fn storage(
+    host: &dyn Host,
+    details: bool,
+    lines: &mut Vec<Line>,
+    stacks: impl IntoIterator<Item = (String, u32, Option<Compound>)>,
+) {
     if !on(host, "item_storage") {
         return;
     }
@@ -390,7 +585,15 @@ pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: im
     if on(host, "storage_sort") {
         merged.sort_by_key(|e| std::cmp::Reverse(e.1));
     }
-    let amount = num(host, if details { "storage_detailed" } else { "storage_normal" }).clamp(0.0, 512.0) as usize;
+    let amount = num(
+        host,
+        if details {
+            "storage_detailed"
+        } else {
+            "storage_normal"
+        },
+    )
+    .clamp(0.0, 512.0) as usize;
     let extra = merged.len().saturating_sub(amount);
     merged.truncate(amount);
     let threshold = num(host, "storage_names") as usize;
@@ -398,7 +601,11 @@ pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: im
         // ItemStorageProvider.Client.append: "<count>× <name>".
         for (id, n, comp) in merged {
             let count = human(i64::from(n), "");
-            lines.push(Line::new().with(Line::small_with(&id, comp)).with(El::Text(format!("§f{count}× {}", item_name(&id)))));
+            lines.push(
+                Line::new()
+                    .with(Line::small_with(&id, comp))
+                    .with(El::Text(format!("§f{count}× {}", item_name(&id)))),
+            );
         }
     } else {
         let per_line = num(host, "storage_per_line").clamp(1.0, 64.0) as usize;
@@ -417,27 +624,59 @@ pub fn storage(host: &dyn Host, details: bool, lines: &mut Vec<Line>, stacks: im
 }
 
 /// FluidStorageProvider's line in Fluid Storage's Display Style: "Water 4,000 mB" (with Show Details "/ 16,000 mB").
-pub fn fluid_line(host: &dyn Host, fluid: Option<&str>, mb: u32, capacity: u32, details: bool) -> Line {
+pub fn fluid_line(
+    host: &dyn Host,
+    fluid: Option<&str>,
+    mb: u32,
+    capacity: u32,
+    details: bool,
+) -> Line {
     let style = opt(host, "fluid_style");
     let commas = |n: u32| opts::commas(i64::from(n));
     let text = match fluid {
         Some(f) if mb > 0 => {
             if details && style == "bar" {
-                let amounts = tr("jade.fluid.with_capacity", "%s / %s", &[&format!("§f{} mB§r", commas(mb)), &format!("{} mB", commas(capacity))]);
+                let amounts = tr(
+                    "jade.fluid.with_capacity",
+                    "%s / %s",
+                    &[
+                        &format!("§f{} mB§r", commas(mb)),
+                        &format!("{} mB", commas(capacity)),
+                    ],
+                );
                 tr("jade.fluid", "%s %s", &[&api::fluid_name(f), &amounts])
             } else {
-                tr("jade.fluid", "%s %s", &[&api::fluid_name(f), &format!("§f{} mB", commas(mb))])
+                tr(
+                    "jade.fluid",
+                    "%s %s",
+                    &[&api::fluid_name(f), &format!("§f{} mB", commas(mb))],
+                )
             }
         }
-        _ => tr("jade.fluid", "%s %s", &[&tr("jade.fluid.empty", "Empty", &[]), &format!("{} mB", commas(capacity))]),
+        _ => tr(
+            "jade.fluid",
+            "%s %s",
+            &[
+                &tr("jade.fluid.empty", "Empty", &[]),
+                &format!("{} mB", commas(capacity)),
+            ],
+        ),
     };
     match style.as_str() {
         "plain" => Line::text(text),
         "icon" => match fluid.filter(|_| mb > 0) {
-            Some(f) => Line::new().with(El::Fluid(f.to_owned())).with(El::Text(text)),
-            None => Line::new().with(Line::small("minecraft:bucket")).with(El::Text(text)),
+            Some(f) => Line::new()
+                .with(El::Fluid(f.to_owned()))
+                .with(El::Text(text)),
+            None => Line::new()
+                .with(Line::small("minecraft:bucket"))
+                .with(El::Text(text)),
         },
-        _ => Line::new().with(El::FluidBar { fluid: fluid.filter(|_| mb > 0).unwrap_or("").to_owned(), frac: mb as f32 / capacity.max(1) as f32, text }),
+        _ => Line::new().with(El::FluidBar {
+            fluid: fluid.filter(|_| mb > 0).unwrap_or("").to_owned(),
+            frac: mb as f32 / capacity.max(1) as f32,
+            text,
+        }),
     }
 }
 
@@ -454,25 +693,52 @@ fn energy_lines(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], lines
             }
         }
     }
-    let Some((amount, capacity)) = found else { return };
-    let (current, max) = (human(i64::from(amount), "FE"), human(i64::from(capacity), "FE"));
+    let Some((amount, capacity)) = found else {
+        return;
+    };
+    let (current, max) = (
+        human(i64::from(amount), "FE"),
+        human(i64::from(capacity), "FE"),
+    );
     lines.push(match opt(host, "energy_style").as_str() {
-        "plain" => Line::text(tr("jade.energy.text", "Energy: %s", &[&tr("jade.fe", "%s / %s", &[&current, &max])])),
-        "icon" => Line::new().with(El::Energy).with(El::Text(tr("jade.fe", "%s / %s", &[&current, &max]))),
-        _ => Line::new().with(El::Bar { frac: (amount as f32 / capacity as f32).clamp(0.0, 1.0), color: 0xB01010, text: tr("jade.fe", "%s / %s", &[&format!("§f{current}§r"), &max]) }),
+        "plain" => Line::text(tr(
+            "jade.energy.text",
+            "Energy: %s",
+            &[&tr("jade.fe", "%s / %s", &[&current, &max])],
+        )),
+        "icon" => {
+            Line::new()
+                .with(El::Energy)
+                .with(El::Text(tr("jade.fe", "%s / %s", &[&current, &max])))
+        }
+        _ => Line::new().with(El::Bar {
+            frac: (amount as f32 / capacity as f32).clamp(0.0, 1.0),
+            color: 0xB01010,
+            text: tr("jade.fe", "%s / %s", &[&format!("§f{current}§r"), &max]),
+        }),
     });
 }
 
 /// FluidStorageProvider through the `FLUIDS` capability: each tank of any block, from any side, once.
-fn fluid_lines(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], details: bool, lines: &mut Vec<Line>) {
+fn fluid_lines(
+    host: &mut dyn ServerHost,
+    level: LevelRef,
+    pos: [i32; 3],
+    details: bool,
+    lines: &mut Vec<Line>,
+) {
     let sides = std::iter::once(None).chain(Direction::ALL.into_iter().map(Some));
     for side in sides {
-        let Some(cap) = level.capability(host, &FLUIDS, pos, side) else { continue };
+        let Some(cap) = level.capability(host, &FLUIDS, pos, side) else {
+            continue;
+        };
         let size = cap.size(host).min(16);
         if size == 0 {
             continue;
         }
-        let water = host.fluid_key("minecraft:water").map(|k| FluidResource::of(&FluidStack::new(k, 1000)));
+        let water = host
+            .fluid_key("minecraft:water")
+            .map(|k| FluidResource::of(&FluidStack::new(k, 1000)));
         for i in 0..size {
             let res = cap.resource(host, i);
             let amount = cap.amount(host, i);
@@ -483,25 +749,43 @@ fn fluid_lines(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], detail
             };
             let id = res.as_ref().map(|r| match *r.fluid() {
                 FluidIdentity::Resolved(k) => k.id(host).unwrap_or_default().to_owned(),
-                FluidIdentity::Unresolved(u) => u.id(host),
+                FluidIdentity::Unresolved(ref u) => u.id().to_string(),
                 _ => String::new(),
             });
-            lines.push(fluid_line(host, id.as_deref(), amount, capacity.max(amount), details));
+            lines.push(fluid_line(
+                host,
+                id.as_deref(),
+                amount,
+                capacity.max(amount),
+                details,
+            ));
         }
         return;
     }
 }
 
 /// ItemStorageProvider through the `ITEMS` capability: any block's slots (a double chest's both halves).
-fn item_lines(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], details: bool, lines: &mut Vec<Line>) -> bool {
-    let Some(cap) = level.capability(host, &ITEMS, pos, None) else { return false };
+fn item_lines(
+    host: &mut dyn ServerHost,
+    level: LevelRef,
+    pos: [i32; 3],
+    details: bool,
+    lines: &mut Vec<Line>,
+) -> bool {
+    let Some(cap) = level.capability(host, &ITEMS, pos, None) else {
+        return false;
+    };
     let size = cap.size(host).min(4096);
     let mut stacks = Vec::new();
     for i in 0..size {
         if let Some(r) = cap.resource(host, i) {
             let n = cap.amount(host, i);
             if n > 0 {
-                stacks.push((r.item().id(host).unwrap_or_default().to_owned(), n, api::stack_components(r.as_stack())));
+                stacks.push((
+                    r.item().id(host).unwrap_or_default().to_owned(),
+                    n,
+                    api::stack_components(r.as_stack()),
+                ));
             }
         }
     }
@@ -510,7 +794,14 @@ fn item_lines(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], details
 }
 
 /// The server's lines Jade itself gives for a block (VanillaPlugin's server data, the universal providers).
-fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: LevelRef, slot: i32, lines: &mut Vec<Line>) {
+fn vanilla_block(
+    host: &mut dyn ServerHost,
+    req: &Request,
+    p: PlayerRef,
+    level: LevelRef,
+    slot: i32,
+    lines: &mut Vec<Line>,
+) {
     let (pos, block, details) = (req.pos, req.block.as_str(), req.details);
     let privileged = p.is_creative(host) == Some(true) || p.is_spectator(host) == Some(true);
     let op = p.permission_level(host).unwrap_or(0) >= 2;
@@ -521,10 +812,14 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
     if on(host, "redstone") {
         if block == "minecraft:comparator" {
             let n = int(cget(&data, "OutputSignal")).unwrap_or(0);
-            lines.push(Line::text(tr("tooltip.jade.power", "Power: %d", &[&format!("§f{n}")])));
+            lines.push(Line::text(tr(
+                "tooltip.jade.power",
+                "Power: %d",
+                &[&format!("§f{n}")],
+            )));
         } else if block == "minecraft:calibrated_sculk_sensor" {
             let facing = level.block_property(host, pos, "facing");
-            let back = match facing.as_deref() {
+            let back = match facing {
                 Some("north") => (Direction::South, [0, 0, 1]),
                 Some("south") => (Direction::North, [0, 0, -1]),
                 Some("west") => (Direction::East, [1, 0, 0]),
@@ -532,13 +827,24 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
             };
             let at = [pos[0] + back.1[0], pos[1] + back.1[1], pos[2] + back.1[2]];
             let n = level.signal(host, at, back.0).unwrap_or(0);
-            lines.push(Line::text(tr("jade.input_signal", "Input: %d", &[&format!("§f{n}")])));
+            lines.push(Line::text(tr(
+                "jade.input_signal",
+                "Input: %d",
+                &[&format!("§f{n}")],
+            )));
         }
     }
     // The ender chest's contents are the asking player's own.
     if block == "minecraft:ender_chest" {
         let mine = p.entity().nbt(host).unwrap_or_default();
-        storage(host, details, lines, items_of(&mine, "EnderItems").into_iter().map(|(_, id, n, c)| (id, n, c)));
+        storage(
+            host,
+            details,
+            lines,
+            items_of(&mine, "EnderItems")
+                .into_iter()
+                .map(|(_, id, n, c)| (id, n, c)),
+        );
         return;
     }
     // Progress on what a mod says.
@@ -557,28 +863,57 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
                 let mb = lvl.saturating_mul(content.total) / content.max_level.max(1);
                 lines.push(fluid_line(host, Some(fluid), mb, content.total, details));
             } else if block == "minecraft:powder_snow_cauldron" {
-                let lvl = level.block_property(host, pos, "level").and_then(|l| l.parse::<u32>().ok()).unwrap_or(0);
-                lines.push(fluid_line(host, Some("minecraft:powder_snow"), lvl * 1000 / 3, 1000, details));
+                let lvl = level
+                    .block_property(host, pos, "level")
+                    .and_then(|l| l.parse::<u32>().ok())
+                    .unwrap_or(0);
+                lines.push(fluid_line(
+                    host,
+                    Some("minecraft:powder_snow"),
+                    lvl * 1000 / 3,
+                    1000,
+                    details,
+                ));
             }
         }
         push_progress(progress, lines);
         return;
     };
-    let kind = be.kind(host).and_then(|k| k.id(host).map(str::to_owned)).unwrap_or_default();
+    let kind = be
+        .kind(host)
+        .and_then(|k| k.id(host).map(str::to_owned))
+        .unwrap_or_default();
     // ItemStorageProvider.putData: the block's loot not rolled for anyone, or its lock, instead of its items.
     if let Some(table) = string(cget(&data, "LootTable")) {
         if on(host, "loot_table") && op {
-            lines.push(Line::text(tr("jade.lootTable", "Loot Table: %s", &[&table])));
-            lines.push(Line::text(tr("jade.lootTableSeed", "Seed: %s", &[&int(cget(&data, "LootTableSeed")).unwrap_or(0).to_string()])));
+            lines.push(Line::text(tr(
+                "jade.lootTable",
+                "Loot Table: %s",
+                &[&table],
+            )));
+            lines.push(Line::text(tr(
+                "jade.lootTableSeed",
+                "Seed: %s",
+                &[&int(cget(&data, "LootTableSeed")).unwrap_or(0).to_string()],
+            )));
         }
-        lines.push(Line::text(tr("jade.loot_not_generated", "§oWhat could it be?", &[])));
+        lines.push(Line::text(tr(
+            "jade.loot_not_generated",
+            "§oWhat could it be?",
+            &[],
+        )));
         return;
     }
     if !privileged && be.lock(host).is_some_and(|l| !l.is_empty()) {
         lines.push(Line::text(tr("jade.locked", "Inventory is locked", &[])));
         return;
     }
-    let item = |items: &[(i64, String, u32, Option<Compound>)], slot: i64| items.iter().find(|(s, _, _, _)| *s == slot).map_or_else(|| Line::item("minecraft:air", 0), |(_, id, n, c)| Line::item_with(id, *n, c.clone()));
+    let item = |items: &[(i64, String, u32, Option<Compound>)], slot: i64| {
+        items.iter().find(|(s, _, _, _)| *s == slot).map_or_else(
+            || Line::item("minecraft:air", 0),
+            |(_, id, n, c)| Line::item_with(id, *n, c.clone()),
+        )
+    };
     let mut items_done = false;
     match kind.as_str() {
         // FurnaceProvider: input, fuel, the progress arrow, output.
@@ -587,8 +922,18 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
             if !items.is_empty() && on(host, "furnace") {
                 let total = int(cget(&data, "cooking_total_time")).unwrap_or(0);
                 let spent = int(cget(&data, "cooking_time_spent")).unwrap_or(0);
-                let frac = if total == 0 { 0.0 } else { spent as f32 / total as f32 };
-                lines.push(Line::new().with(item(&items, 0)).with(item(&items, 1)).with(El::Arrow(frac)).with(item(&items, 2)));
+                let frac = if total == 0 {
+                    0.0
+                } else {
+                    spent as f32 / total as f32
+                };
+                lines.push(
+                    Line::new()
+                        .with(item(&items, 0))
+                        .with(item(&items, 1))
+                        .with(El::Arrow(frac))
+                        .with(item(&items, 2)),
+                );
             }
             items_done = true;
         }
@@ -597,9 +942,14 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
             if on(host, "brewing_stand") {
                 let fuel = int(cget(&data, "Fuel")).unwrap_or(0);
                 let time = int(cget(&data, "BrewTime")).unwrap_or(0);
-                let mut l = Line::new().with(Line::small("minecraft:blaze_powder")).with(El::Text(format!("§f{fuel}")));
+                let mut l = Line::new()
+                    .with(Line::small("minecraft:blaze_powder"))
+                    .with(El::Text(format!("§f{fuel}")));
                 if time > 0 {
-                    l = l.with(El::Space(5.0)).with(Line::small("minecraft:clock")).with(El::Text(format!("§f{}", seconds_marker(time))));
+                    l = l
+                        .with(El::Space(5.0))
+                        .with(Line::small("minecraft:clock"))
+                        .with(El::Text(format!("§f{}", seconds_marker(time))));
                 }
                 lines.push(l);
             }
@@ -607,7 +957,9 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         // ShelfProvider: the slot pointed at, unless Show Details lists them all.
         k if k == "minecraft:chiseled_bookshelf" || k.ends_with("shelf") => {
             let items = items_of(&data, "Items");
-            if slot >= 0 && !details && on(host, "shelf")
+            if slot >= 0
+                && !details
+                && on(host, "shelf")
                 && let Some((_, id, _, c)) = items.iter().find(|(s, _, _, _)| *s == i64::from(slot))
             {
                 lines.push(Line::new().with(Line::icon_with(id, c.clone())));
@@ -630,7 +982,10 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
                 if let (Some(t), Some(c)) = (total.get(i), spent.get(i))
                     && *t > 0
                 {
-                    l = l.with(El::Text(format!("§f{}", seconds_marker(i64::from((t - c).max(0))))));
+                    l = l.with(El::Text(format!(
+                        "§f{}",
+                        seconds_marker(i64::from((t - c).max(0)))
+                    )));
                 }
             }
             if !l.els.is_empty() {
@@ -642,8 +997,15 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         "minecraft:jukebox" => {
             if on(host, "jukebox") {
                 match cget(&data, "RecordItem").and_then(stack_of) {
-                    Some((id, _, c)) => lines.push(Line::new().with(Line::small_with(&id, c)).with(El::Text(format!("§f{}", item_name(&id))))),
-                    None => lines.push(Line::text(format!("§7{}", tr("tooltip.jade.empty", "Empty", &[])))),
+                    Some((id, _, c)) => lines.push(
+                        Line::new()
+                            .with(Line::small_with(&id, c))
+                            .with(El::Text(format!("§f{}", item_name(&id)))),
+                    ),
+                    None => lines.push(Line::text(format!(
+                        "§7{}",
+                        tr("tooltip.jade.empty", "Empty", &[])
+                    ))),
                 }
             }
             items_done = true;
@@ -653,7 +1015,11 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
             if on(host, "lectern")
                 && let Some((id, _, c)) = cget(&data, "Book").and_then(stack_of)
             {
-                lines.push(Line::new().with(Line::small_with(&id, c)).with(El::Text(format!("§f{}", item_name(&id)))));
+                lines.push(
+                    Line::new()
+                        .with(Line::small_with(&id, c))
+                        .with(El::Text(format!("§f{}", item_name(&id)))),
+                );
             }
             items_done = true;
         }
@@ -664,12 +1030,20 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
                     Some(Tag::List(l)) => l.len(),
                     _ => 0,
                 };
-                lines.push(Line::text(tr("jade.beehive.bees", "Bees: %s", &[&format!("§f{}", tr("jade.fraction", "%d / %d", &[&bees.to_string(), "3"]))])));
+                lines.push(Line::text(tr(
+                    "jade.beehive.bees",
+                    "Bees: %s",
+                    &[&format!(
+                        "§f{}",
+                        tr("jade.fraction", "%d / %d", &[&bees.to_string(), "3"])
+                    )],
+                )));
             }
         }
         // CommandBlockProvider: its command (truncated at 40 chars as Java Jade does), to operators only.
         "minecraft:command_block" => {
-            if on(host, "command_block") && op
+            if on(host, "command_block")
+                && op
                 && let Some(cmd) = string(cget(&data, "Command")).filter(|c| !c.is_empty())
             {
                 let shown = if cmd.chars().count() > 40 {
@@ -683,27 +1057,46 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
         // MobSpawnerProvider: the title names what it spawns.
         "minecraft:mob_spawner" => {
             if on(host, "mob_spawner")
-                && let Some(id) = cget(&data, "SpawnData").and_then(|t| tget(t, "entity")).and_then(|t| string(tget(t, "id")))
+                && let Some(id) = cget(&data, "SpawnData")
+                    .and_then(|t| tget(t, "entity"))
+                    .and_then(|t| string(tget(t, "id")))
             {
-                lines.push(Line::new().with(El::Title(tr("jade.spawner", "%s (%s)", &["{0}", &api::entity_name(&id)]))));
+                lines.push(Line::new().with(El::Title(tr(
+                    "jade.spawner",
+                    "%s (%s)",
+                    &["{0}", &api::entity_name(&id)],
+                ))));
             }
         }
         // MobSpawnerCooldownProvider: a trial spawner's next mob and cooldown.
         "minecraft:trial_spawner" if on(host, "mob_spawner") => {
-            let next = cget(&data, "spawn_data").and_then(|t| tget(t, "entity")).and_then(|t| string(tget(t, "id")));
+            let next = cget(&data, "spawn_data")
+                .and_then(|t| tget(t, "entity"))
+                .and_then(|t| string(tget(t, "id")));
             if let Some(id) = next {
-                lines.push(Line::new().with(El::Title(tr("jade.spawner", "%s (%s)", &["{0}", &api::entity_name(&id)]))));
+                lines.push(Line::new().with(El::Title(tr(
+                    "jade.spawner",
+                    "%s (%s)",
+                    &["{0}", &api::entity_name(&id)],
+                ))));
             }
             let now = level.game_time(host).unwrap_or(0);
             let ends = int(cget(&data, "cooldown_ends_at")).unwrap_or(0);
             if ends > now {
-                lines.push(Line::text(tr("jade.trial_spawner_cd", "Cooldown: %s", &[&format!("§f{}", seconds_marker(ends - now))])));
+                lines.push(Line::text(tr(
+                    "jade.trial_spawner_cd",
+                    "Cooldown: %s",
+                    &[&format!("§f{}", seconds_marker(ends - now))],
+                )));
             }
         }
         _ => {}
     }
     // HopperLockProvider: a locked hopper's title.
-    if block == "minecraft:hopper" && level.block_property(host, pos, "enabled").as_deref() == Some("false") && on(host, "redstone") {
+    if block == "minecraft:hopper"
+        && level.block_property(host, pos, "enabled") == Some("false")
+        && on(host, "redstone")
+    {
         lines.push(Line::new().with(El::Title(tr("jade.access.block.locked", "Locked {0}", &[]))));
     }
     // The universal providers, for every block entity: energy, items, fluids, through the capabilities.
@@ -712,14 +1105,24 @@ fn vanilla_block(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: 
     }
     if !items_done && !hidden[0] && !item_lines(host, level, pos, details, lines) {
         // A container the capability doesn't answer for: its saved items.
-        storage(host, details, lines, items_of(&data, "Items").into_iter().map(|(_, id, n, c)| (id, n, c)));
+        storage(
+            host,
+            details,
+            lines,
+            items_of(&data, "Items")
+                .into_iter()
+                .map(|(_, id, n, c)| (id, n, c)),
+        );
     }
     if on(host, "fluid_storage") && !hidden[2] && (details || !on(host, "fluid_detailed")) {
         fluid_lines(host, level, pos, details, lines);
     }
     // A mod block with no provider: the ints `progress` and `max_progress` it saves.
     if progress.is_empty() {
-        let (now, most) = (int(cget(&data, "progress")), int(cget(&data, "max_progress")));
+        let (now, most) = (
+            int(cget(&data, "progress")),
+            int(cget(&data, "max_progress")),
+        );
         if let (Some(now), Some(most)) = (now, most)
             && most > 0
             && now > 0
@@ -736,7 +1139,11 @@ fn push_progress(progress: Vec<(f32, Option<String>)>, lines: &mut Vec<Line>) {
         if let Some(text) = text {
             lines.push(Line::new().with(El::Small(text)));
         }
-        lines.push(Line::new().with(El::Bar { frac: frac.clamp(0.0, 1.0), color: 0x4FB54F, text: String::new() }));
+        lines.push(Line::new().with(El::Bar {
+            frac: frac.clamp(0.0, 1.0),
+            color: 0x4FB54F,
+            text: String::new(),
+        }));
     }
 }
 
@@ -749,18 +1156,30 @@ pub fn register_commands(e: &mut RegisterCommandsEvent<'_>) {
         ("jade show", true),
         ("jade hide", false),
     ] {
-        e.commands.push(Command::op(usage, 2).executes(move |host, source, invocation| overlay(host, source, invocation, show).ok_or_else(|| Box::new(Text::literal("")))));
+        e.commands.push(
+            Command::op(usage, 2).executes(move |host, source, invocation| {
+                overlay(host, source, invocation, show).ok_or_else(|| Box::new(Text::literal("")))
+            }),
+        );
     }
     e.commands.push(crate::commands_menu::command());
 }
 
 fn permitted(source: &CommandSource) -> bool {
-    !matches!(source.permission(), PermissionLevel::All | PermissionLevel::Moderators)
+    !matches!(
+        source.permission(),
+        PermissionLevel::All | PermissionLevel::Moderators
+    )
 }
 
 /// `/jade show|hide [targets]`: tells the targets' clients (the source's player without targets) to show or hide the
 /// overlay, then says how many were told.
-fn overlay(host: &mut dyn ServerHost, source: &CommandSource, invocation: &CommandInvocation, show: bool) -> Option<i32> {
+fn overlay(
+    host: &mut dyn ServerHost,
+    source: &CommandSource,
+    invocation: &CommandInvocation,
+    show: bool,
+) -> Option<i32> {
     if !permitted(source) {
         return None;
     }
@@ -774,10 +1193,22 @@ fn overlay(host: &mut dyn ServerHost, source: &CommandSource, invocation: &Comma
     let mut told = 0;
     for p in targets {
         let line = format!("o {}", u8::from(show));
-        if p.send_payload(host, &PayloadId(NET_DATA.into()), PayloadBytes(line.into_bytes())).is_ok() {
+        if p.send_payload(
+            host,
+            &PayloadId(NET_DATA.into()),
+            PayloadBytes(line.into_bytes()),
+        )
+        .is_ok()
+        {
             told += 1;
         }
     }
-    let _ = host.commands().feedback(Text::literal(format!("Overlay {} for {told} players", if show { "shown" } else { "hidden" })), false);
+    let _ = host.commands().feedback(
+        Text::literal(format!(
+            "Overlay {} for {told} players",
+            if show { "shown" } else { "hidden" }
+        )),
+        false,
+    );
     Some(told)
 }

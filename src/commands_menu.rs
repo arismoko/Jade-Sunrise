@@ -24,16 +24,25 @@ pub(crate) fn command() -> CommandRegistration {
     Command::new(NS).executes(|host, source, _| {
         // Vanilla's message for a player-only command run by another source (CommandSourceStack.getPlayerOrException).
         let fail = || Box::new(Text::translate("permissions.requires.player", Vec::new()));
-        let CommandSource::Player { player, permission, .. } = source else { return Err(fail()) };
+        let CommandSource::Player {
+            player, permission, ..
+        } = source
+        else {
+            return Err(fail());
+        };
         let level = number(*permission);
-        player.send_payload(host, &channel(), PayloadBytes(vec![level])).map_err(|_| fail())?;
+        player
+            .send_payload(host, &channel(), PayloadBytes(vec![level]))
+            .map_err(|_| fail())?;
         Ok(1)
     })
 }
 
 /// Registers the client's side of the channel (call from `register`, with the mod's payload registrar).
 pub(crate) fn register_payload(r: &mut dyn Registrar) {
-    r.payload_handlers().registrar("1").play_to_client(channel(), Some(Arc::new(Open)));
+    r.payload_handlers()
+        .registrar("1")
+        .play_to_client(channel(), Some(Arc::new(Open)));
 }
 
 fn number(level: PermissionLevel) -> u8 {
@@ -50,10 +59,16 @@ fn number(level: PermissionLevel) -> u8 {
 struct Open;
 
 impl IPayloadHandler for Open {
-    fn handle(&self, payload: PayloadBytes, cx: &mut dyn IPayloadContext) -> Result<(), PayloadHandleError> {
+    fn handle(
+        &self,
+        payload: PayloadBytes,
+        cx: &mut dyn IPayloadContext,
+    ) -> Result<(), PayloadHandleError> {
         #[cfg_attr(not(feature = "guideme"), allow(unused_variables))]
         let level = payload.0.first().copied().unwrap_or(0).min(4);
-        let Ok(host) = cx.client_host() else { return Ok(()) };
+        let Ok(host) = cx.client_host() else {
+            return Ok(());
+        };
         #[cfg_attr(not(feature = "guideme"), allow(unused_mut))]
         let mut opened = false;
         mod_api::if_installed!(host, guideme, {
@@ -61,7 +76,9 @@ impl IPayloadHandler for Open {
         });
         if !opened {
             // GuideME's own lang files aren't there without it, so the line is in English.
-            let _ = host.chat_line(Text::literal(format!("Install GuideME to open the /{NS} commands menu.")));
+            let _ = host.chat_line(Text::literal(format!(
+                "Install GuideME to open the /{NS} commands menu."
+            )));
         }
         Ok(())
     }

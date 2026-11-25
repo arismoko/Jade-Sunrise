@@ -7,7 +7,7 @@
 //! `entity_kind`, `entity_nbt`, `entity_pose`, `entity_leash_holder`, `display`, `item_entity_stack` and `merchant` are
 //! server-only, so an entity's kind, name, icon and server lines come back from the server (`server.rs`), asked for a
 //! few times a second while the player looks.
-use crate::api::{self, El, Line, Target, TR_CLOSE, TR_OPEN, TR_SEP};
+use crate::api::{self, El, Line, TR_CLOSE, TR_OPEN, TR_SEP, Target};
 use crate::gfx::{self, Gfx};
 use crate::opts::{self, fill, num, on, opt, plain, tr, trf, trim2};
 use crate::theme;
@@ -24,7 +24,15 @@ pub const LAYER: &str = "jade:overlay";
 #[derive(Clone, Debug, PartialEq)]
 pub enum Seen {
     /// The block (what it passes for), its real id, state string, where the ray meets it and how far that is.
-    Block { pos: [i32; 3], block: String, real: String, state: String, hit: [f64; 3], dist: f64, face: [i32; 3] },
+    Block {
+        pos: [i32; 3],
+        block: String,
+        real: String,
+        state: String,
+        hit: [f64; 3],
+        dist: f64,
+        face: [i32; 3],
+    },
     /// An entity on the crosshair (or the server's pick), where the ray meets it and how far.
     Entity { id: u32, point: [f64; 3], dist: f64 },
 }
@@ -145,7 +153,11 @@ fn marker(h: &dyn ClientHost, c: &[char], i: &mut usize, depth: u8) -> String {
         "@entity" => entity_name(h, args.first().copied().unwrap_or(&fallback)),
         "@fluid" => {
             let id = args.first().copied().unwrap_or(&fallback);
-            if id == "minecraft:powder_snow" { block_name(h, id) } else { h.fluid_name(id) }
+            if id == "minecraft:powder_snow" {
+                block_name(h, id)
+            } else {
+                h.fluid_name(id)
+            }
         }
         _ => fill(&tr(h, &key, &fallback), &args),
     }
@@ -154,7 +166,9 @@ fn marker(h: &dyn ClientHost, c: &[char], i: &mut usize, depth: u8) -> String {
 /// An item's name: `item.<ns>.<path>`, else `block.<ns>.<path>`, else its path in words.
 pub fn item_name(h: &dyn ClientHost, id: &str) -> String {
     let (ns, path) = id.split_once(':').unwrap_or(("minecraft", id));
-    h.translate(&format!("item.{ns}.{path}")).or_else(|| h.translate(&format!("block.{ns}.{path}"))).unwrap_or_else(|| words(path))
+    h.translate(&format!("item.{ns}.{path}"))
+        .or_else(|| h.translate(&format!("block.{ns}.{path}")))
+        .unwrap_or_else(|| words(path))
 }
 
 /// A block's name as Jade titles it: its item's (`pick` result), else its own.
@@ -163,19 +177,23 @@ pub fn block_name(h: &dyn ClientHost, block: &str) -> String {
     if let Some(item) = block_item(h, block) {
         return item_name(h, &item);
     }
-    h.translate(&format!("block.{ns}.{path}")).unwrap_or_else(|| words(path))
+    h.translate(&format!("block.{ns}.{path}"))
+        .unwrap_or_else(|| words(path))
 }
 
 pub fn entity_name(h: &dyn ClientHost, id: &str) -> String {
     let (ns, path) = id.split_once(':').unwrap_or(("minecraft", id));
-    h.translate(&format!("entity.{ns}.{path}")).unwrap_or_else(|| words(path))
+    h.translate(&format!("entity.{ns}.{path}"))
+        .unwrap_or_else(|| words(path))
 }
 
 fn words(path: &str) -> String {
     path.split('_')
         .map(|w| {
             let mut c = w.chars();
-            c.next().map_or(String::new(), |f| f.to_uppercase().collect::<String>() + c.as_str())
+            c.next().map_or(String::new(), |f| {
+                f.to_uppercase().collect::<String>() + c.as_str()
+            })
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -204,7 +222,12 @@ pub fn mod_name(h: &dyn ClientHost, ns: &str) -> String {
             }
         }
     }
-    let registered = api::registry(|r| r.mod_names.iter().find(|(n, _)| *n == ns).map(|(_, name)| (*name).to_owned()));
+    let registered = api::registry(|r| {
+        r.mod_names
+            .iter()
+            .find(|(n, _)| *n == ns)
+            .map(|(_, name)| (*name).to_owned())
+    });
     if let Some(name) = registered {
         return name;
     }
@@ -225,12 +248,21 @@ pub fn mod_name(h: &dyn ClientHost, ns: &str) -> String {
 
 /// A block state string's properties.
 pub fn props(state: &str) -> Vec<(String, String)> {
-    let Some(inner) = state.split_once('[').and_then(|(_, r)| r.strip_suffix(']')) else { return Vec::new() };
-    inner.split(',').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.to_owned(), v.to_owned())).collect()
+    let Some(inner) = state.split_once('[').and_then(|(_, r)| r.strip_suffix(']')) else {
+        return Vec::new();
+    };
+    inner
+        .split(',')
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect()
 }
 
 pub fn prop(state: &str, key: &str) -> Option<String> {
-    props(state).into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    props(state)
+        .into_iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v)
 }
 
 /// The level this client shows.
@@ -252,8 +284,15 @@ pub fn me(h: &dyn ClientHost) -> Option<(PlayerRef, Option<LivingRef>)> {
 }
 
 fn look_dir(yaw_deg: f32, pitch_deg: f32) -> [f64; 3] {
-    let (yaw, pitch) = (f64::from(yaw_deg).to_radians(), f64::from(pitch_deg).to_radians());
-    [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()]
+    let (yaw, pitch) = (
+        f64::from(yaw_deg).to_radians(),
+        f64::from(pitch_deg).to_radians(),
+    );
+    [
+        -yaw.sin() * pitch.cos(),
+        -pitch.sin(),
+        yaw.cos() * pitch.cos(),
+    ]
 }
 
 fn face_vec(face: BlockFace) -> [i32; 3] {
@@ -282,14 +321,21 @@ pub fn aim(h: &dyn ClientHost) -> Option<([f64; 3], [f64; 3])> {
 }
 
 fn is_mining(h: &dyn ClientHost) -> bool {
-    matches!(me(h).and_then(|(p, _)| p.block_breaking(h)), Some(BlockBreakingState::Breaking { .. }))
+    matches!(
+        me(h).and_then(|(p, _)| p.block_breaking(h)),
+        Some(BlockBreakingState::Breaking { .. })
+    )
 }
 
 fn skip_entity(h: &dyn ClientHost, data: &EntityData) -> bool {
     if is_mining(h) && data.kind == "minecraft:item" {
         return true;
     }
-    if data.projectile && h.entity(data.id).and_then(|e| e.tick_count(h)).is_some_and(|t| t <= 10) {
+    if data.projectile
+        && h.entity(data.id)
+            .and_then(|e| e.tick_count(h))
+            .is_some_and(|t| t <= 10)
+    {
         return true;
     }
     false
@@ -301,12 +347,16 @@ fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 /// The first fluid along the view (ClipContext.Fluid.ANY): its distance, position and state. None with the eye in a
 /// fluid when it must come from outside (RayTracing's check of the eye's block).
-fn fluid_hit(h: &dyn ClientHost, reach: f64, from_outside: bool) -> Option<(f64, [i32; 3], String, String)> {
+fn fluid_hit(
+    h: &dyn ClientHost,
+    reach: f64,
+    from_outside: bool,
+) -> Option<(f64, [i32; 3], String, String)> {
     let (eye, dir) = aim(h)?;
     let level = level(h)?;
     let fluid_at = |p: [i32; 3]| -> Option<(String, String)> {
         let state = level.block_state(h, p)?;
-        let fs = h.state_fluid_state(state)?;
+        let fs = state.fluid_state(&h.block_states())?;
         if fs.is_empty() {
             return None;
         }
@@ -320,14 +370,30 @@ fn fluid_hit(h: &dyn ClientHost, reach: f64, from_outside: bool) -> Option<(f64,
         return None;
     }
     let step = dir.map(|d| if d > 0.0 { 1 } else { -1 });
-    let delta = dir.map(|d| if d == 0.0 { f64::INFINITY } else { (1.0 / d).abs() });
+    let delta = dir.map(|d| {
+        if d == 0.0 {
+            f64::INFINITY
+        } else {
+            (1.0 / d).abs()
+        }
+    });
     let mut t_max = [0.0; 3];
     for a in 0..3 {
         let edge = f64::from(pos[a]) + if step[a] > 0 { 1.0 } else { 0.0 };
-        t_max[a] = if dir[a] == 0.0 { f64::INFINITY } else { (edge - eye[a]) / dir[a] };
+        t_max[a] = if dir[a] == 0.0 {
+            f64::INFINITY
+        } else {
+            (edge - eye[a]) / dir[a]
+        };
     }
     for _ in 0..512 {
-        let a = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] { 0 } else if t_max[1] <= t_max[2] { 1 } else { 2 };
+        let a = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] {
+            0
+        } else if t_max[1] <= t_max[2] {
+            1
+        } else {
+            2
+        };
         let t = t_max[a];
         if t > reach {
             return None;
@@ -341,13 +407,28 @@ fn fluid_hit(h: &dyn ClientHost, reach: f64, from_outside: bool) -> Option<(f64,
     None
 }
 
+/// `BlockState.is(TagKey)` for a tag named by id; an unknown tag is not a member.
+fn block_in_tag(h: &dyn Host, block: BlockKey, tag: &str) -> bool {
+    let tags = h.tags();
+    Identifier::parse(tag)
+        .ok()
+        .and_then(|id| tags.key(&id))
+        .and_then(|t| tags.block_in_tag(block, t))
+        == Some(true)
+}
+
 fn ignored_block(h: &dyn ClientHost, block: &str) -> bool {
     let (blocks, _) = opts::ignore_lists(h);
     if blocks.iter().any(|b| b == block) {
         return true;
     }
-    let Some(key) = bkey(h, block) else { return false };
-    blocks.iter().filter_map(|t| t.strip_prefix('#')).any(|tag| h.block_in_tag(key, tag) == Some(true))
+    let Some(key) = bkey(h, block) else {
+        return false;
+    };
+    blocks
+        .iter()
+        .filter_map(|t| t.strip_prefix('#'))
+        .any(|tag| block_in_tag(h, key, tag))
 }
 
 pub fn ignored_entity(h: &dyn ClientHost, kind: &str) -> bool {
@@ -374,7 +455,9 @@ fn camouflage(h: &dyn ClientHost, block: &str) -> Option<String> {
         format!("{ns}:{rest}")
     } else if let Some(rest) = path.strip_prefix("suspicious_") {
         format!("{ns}:{rest}")
-    } else if block == "minecraft:powder_snow" && with(|c| c.powder_at.is_none_or(|at| at.elapsed().as_millis() > 8000)) {
+    } else if block == "minecraft:powder_snow"
+        && with(|c| c.powder_at.is_none_or(|at| at.elapsed().as_millis() > 8000))
+    {
         "minecraft:snow_block".to_owned()
     } else {
         return None;
@@ -390,14 +473,20 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
     let (eye, dir) = aim(h)?;
     let level = level(h)?;
     let extra = num(h, "reach_distance").clamp(0.0, 20.0);
-    let reach = me(h).and_then(|(_, l)| l?.attribute_value(h, "minecraft:block_interaction_range")).unwrap_or(4.5);
+    let reach = me(h)
+        .and_then(|(_, l)| l?.attribute_value(h, "minecraft:block_interaction_range"))
+        .unwrap_or(4.5);
     let eye_mode = opt(h, "perspective_mode") == "eye";
     // RayTracing.rayTrace: in Camera perspective mode, extend reach by the camera-to-eye offset (e.g. third person).
     let cam_offset = if eye_mode {
         0.0
     } else if let Some(entity_eye) = h.camera_entity().and_then(|e| e.eye_position(h)) {
         let d2: f64 = (0..3).map(|i| (entity_eye[i] - eye[i]).powi(2)).sum();
-        if d2 > 1e-5 && d2 <= 1e8 { d2.sqrt() } else { 0.0 }
+        if d2 > 1e-5 && d2 <= 1e8 {
+            d2.sqrt()
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
@@ -409,20 +498,44 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
             let p = [pos.x, pos.y, pos.z];
             if let Some(s) = h.block_state_string(state) {
                 let id = s.split('[').next().unwrap_or(&s).to_owned();
-                block = Some(Seen::Block { pos: p, block: id.clone(), real: id, state: s, hit: hit.point, dist: dist(eye, hit.point), face: hit.face });
+                block = Some(Seen::Block {
+                    pos: p,
+                    block: id.clone(),
+                    real: id,
+                    state: s,
+                    hit: hit.point,
+                    dist: dist(eye, hit.point),
+                    face: hit.face,
+                });
             }
         }
         Some(CrosshairTarget::Entity { entity: e, point }) => {
-            entity = Some(Seen::Entity { id: e.id(), point, dist: dist(eye, point) });
+            entity = Some(Seen::Entity {
+                id: e.id(),
+                point,
+                dist: dist(eye, point),
+            });
         }
         _ => {}
     }
     // Extended Reach, Camera perspective offset, or Eye perspective: clip along the chosen ray.
     if extra > 0.0 || cam_offset > 0.0 || eye_mode {
-        let to = [eye[0] + dir[0] * total_reach, eye[1] + dir[1] * total_reach, eye[2] + dir[2] * total_reach];
+        let to = [
+            eye[0] + dir[0] * total_reach,
+            eye[1] + dir[1] * total_reach,
+            eye[2] + dir[2] * total_reach,
+        ];
         match level.clip(h, eye, to, ClipBlock::Outline, ClipFluid::None) {
             Some(hit) if !hit.miss => {
-                block = state_at(h, level, hit.block).map(|(id, s)| Seen::Block { pos: hit.block, block: id.clone(), real: id, state: s, hit: hit.location, dist: dist(eye, hit.location), face: face_vec(hit.face) });
+                block = state_at(h, level, hit.block).map(|(id, s)| Seen::Block {
+                    pos: hit.block,
+                    block: id.clone(),
+                    real: id,
+                    state: s,
+                    hit: hit.location,
+                    dist: dist(eye, hit.location),
+                    face: face_vec(hit.face),
+                });
             }
             Some(_) => {
                 block = None;
@@ -434,7 +547,15 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
                     let point = [hit.x, hit.y, hit.z];
                     if let Some((id, s)) = state_at(h, level, p) {
                         let face = face_of(point, p);
-                        block = Some(Seen::Block { pos: p, block: id.clone(), real: id, state: s, hit: point, dist: dist(eye, point), face });
+                        block = Some(Seen::Block {
+                            pos: p,
+                            block: id.clone(),
+                            real: id,
+                            state: s,
+                            hit: point,
+                            dist: dist(eye, point),
+                            face,
+                        });
                     }
                 }
             }
@@ -443,22 +564,40 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
     }
     let blocks_on = on(h, "display_blocks");
     let block = block.filter(|b| match b {
-        Seen::Block { block, .. } => blocks_on && !block.ends_with(":air") && !ignored_block(h, block),
+        Seen::Block { block, .. } => {
+            blocks_on && !block.ends_with(":air") && !ignored_block(h, block)
+        }
         _ => false,
     });
     let entity = entity.filter(|_| on(h, "display_entities"));
     // RayTracing.rayTrace: fluids from outside them with Any (or Toggle Fluid), with Fallback only with no block.
     let mode = opt(h, "display_fluids");
     let any = mode == "any" || with(|c| c.liquids);
-    let fluid = if blocks_on && (any || (mode == "fallback" && block.is_none())) { fluid_hit(h, total_reach, any) } else { None };
+    let fluid = if blocks_on && (any || (mode == "fallback" && block.is_none())) {
+        fluid_hit(h, total_reach, any)
+    } else {
+        None
+    };
     let bd = |b: &Option<Seen>| match b {
         Some(Seen::Block { dist, .. }) => *dist,
         _ => f64::INFINITY,
     };
     let block = match fluid {
         Some((fd, pos, name, s)) if fd < bd(&block) => {
-            let point = [eye[0] + dir[0] * fd, eye[1] + dir[1] * fd, eye[2] + dir[2] * fd];
-            Some(Seen::Block { pos, block: name.clone(), real: name, state: s, hit: point, dist: fd, face: [0, 1, 0] })
+            let point = [
+                eye[0] + dir[0] * fd,
+                eye[1] + dir[1] * fd,
+                eye[2] + dir[2] * fd,
+            ];
+            Some(Seen::Block {
+                pos,
+                block: name.clone(),
+                real: name,
+                state: s,
+                hit: point,
+                dist: fd,
+                face: [0, 1, 0],
+            })
         }
         _ => block,
     };
@@ -468,14 +607,34 @@ pub fn look(h: &dyn ClientHost) -> Option<Seen> {
                 Seen::Entity { dist, .. } => *dist,
                 _ => f64::INFINITY,
             };
-            if ed < bd(&Some(b.clone())) { Some(e) } else { Some(b) }
+            if ed < bd(&Some(b.clone())) {
+                Some(e)
+            } else {
+                Some(b)
+            }
         }
         (b, e) => b.or(e),
     };
     Some(match chosen? {
-        Seen::Block { pos, block, real, state, hit, dist, face } => {
+        Seen::Block {
+            pos,
+            block,
+            real,
+            state,
+            hit,
+            dist,
+            face,
+        } => {
             let shown = camouflage(h, &block).unwrap_or_else(|| block.clone());
-            Seen::Block { pos, block: shown, real, state, hit, dist, face }
+            Seen::Block {
+                pos,
+                block: shown,
+                real,
+                state,
+                hit,
+                dist,
+                face,
+            }
         }
         other => other,
     })
@@ -500,10 +659,54 @@ fn face_of(point: [f64; 3], pos: [i32; 3]) -> [i32; 3] {
 
 /// VanillaPlugin's harvest plugin: each ToolType's tiers, lowest first, and its skipInstaBreakingBlock.
 const TOOL_TYPES: [(&[&str], bool); 6] = [
-    (&["minecraft:wooden_pickaxe", "minecraft:golden_pickaxe", "minecraft:stone_pickaxe", "minecraft:copper_pickaxe", "minecraft:iron_pickaxe", "minecraft:diamond_pickaxe", "minecraft:netherite_pickaxe"], true),
-    (&["minecraft:wooden_axe", "minecraft:golden_axe", "minecraft:stone_axe", "minecraft:copper_axe", "minecraft:iron_axe", "minecraft:diamond_axe", "minecraft:netherite_axe"], true),
-    (&["minecraft:wooden_shovel", "minecraft:golden_shovel", "minecraft:stone_shovel", "minecraft:copper_shovel", "minecraft:iron_shovel", "minecraft:diamond_shovel", "minecraft:netherite_shovel"], true),
-    (&["minecraft:wooden_hoe", "minecraft:golden_hoe", "minecraft:stone_hoe", "minecraft:copper_hoe", "minecraft:iron_hoe", "minecraft:diamond_hoe", "minecraft:netherite_hoe"], true),
+    (
+        &[
+            "minecraft:wooden_pickaxe",
+            "minecraft:golden_pickaxe",
+            "minecraft:stone_pickaxe",
+            "minecraft:copper_pickaxe",
+            "minecraft:iron_pickaxe",
+            "minecraft:diamond_pickaxe",
+            "minecraft:netherite_pickaxe",
+        ],
+        true,
+    ),
+    (
+        &[
+            "minecraft:wooden_axe",
+            "minecraft:golden_axe",
+            "minecraft:stone_axe",
+            "minecraft:copper_axe",
+            "minecraft:iron_axe",
+            "minecraft:diamond_axe",
+            "minecraft:netherite_axe",
+        ],
+        true,
+    ),
+    (
+        &[
+            "minecraft:wooden_shovel",
+            "minecraft:golden_shovel",
+            "minecraft:stone_shovel",
+            "minecraft:copper_shovel",
+            "minecraft:iron_shovel",
+            "minecraft:diamond_shovel",
+            "minecraft:netherite_shovel",
+        ],
+        true,
+    ),
+    (
+        &[
+            "minecraft:wooden_hoe",
+            "minecraft:golden_hoe",
+            "minecraft:stone_hoe",
+            "minecraft:copper_hoe",
+            "minecraft:iron_hoe",
+            "minecraft:diamond_hoe",
+            "minecraft:netherite_hoe",
+        ],
+        true,
+    ),
     (&["minecraft:wooden_sword"], true),
     (&["minecraft:shears"], false),
 ];
@@ -514,9 +717,15 @@ fn tool_correct(h: &dyn ClientHost, tool: &str, block: &str) -> bool {
     if tool == "minecraft:shears" && crate::facts::shearable(block) {
         return true;
     }
-    let Some(item_key) = gfx::item_key(h, tool) else { return false };
-    let Some(state) = bkey(h, block).and_then(|k| h.block_state_default(k)) else { return false };
-    h.block_states().is_correct_tool_for_drops(&ItemStack::of(item_key), state).unwrap_or(false)
+    let Some(item_key) = gfx::item_key(h, tool) else {
+        return false;
+    };
+    let Some(state) = bkey(h, block).and_then(|k| h.block_state_default(k)) else {
+        return false;
+    };
+    h.block_states()
+        .is_correct_tool_for_drops(&ItemStack::of(item_key), state)
+        .unwrap_or(false)
 }
 
 /// The tick the cache was filled on, and each block's harvest tools.
@@ -554,9 +763,17 @@ fn harvest_tools(h: &dyn ClientHost, block: &str, insta: bool) -> Vec<String> {
 /// The held item's correctness for a block's drops (`ItemStack.isCorrectToolForDrops`), as the game answers it for
 /// the held stack: a mod's tool counts by its own `minecraft:tool` rules.
 fn held_correct(h: &dyn ClientHost, block: &str) -> bool {
-    let Some(held) = me(h).and_then(|(_, l)| l?.with_hand_item(h, Hand::Main, |s| s.project()).flatten()) else { return false };
-    let Some(state) = bkey(h, block).and_then(|k| h.block_state_default(k)) else { return false };
-    h.block_states().is_correct_tool_for_drops(&held, state).unwrap_or(false)
+    let Some(held) =
+        me(h).and_then(|(_, l)| l?.with_hand_item(h, Hand::Main, |s| s.project()).flatten())
+    else {
+        return false;
+    };
+    let Some(state) = bkey(h, block).and_then(|k| h.block_state_default(k)) else {
+        return false;
+    };
+    h.block_states()
+        .is_correct_tool_for_drops(&held, state)
+        .unwrap_or(false)
 }
 
 /// `BlockState.requiresCorrectToolForDrops()` as the game answers it (a mod's block too).
@@ -574,7 +791,12 @@ fn harvest_tool(h: &dyn ClientHost, block: &str) -> Option<Vec<El>> {
     }
     let hardness = crate::facts::fact(h, block).map_or(0.0, |f| f.hardness);
     if hardness < 0.0 {
-        return on(h, "harvest_unbreakable").then(|| vec![El::Text(format!("§c{}", tr(h, "jade.harvest_tool.unbreakable", "Unbreakable")))]);
+        return on(h, "harvest_unbreakable").then(|| {
+            vec![El::Text(format!(
+                "§c{}",
+                tr(h, "jade.harvest_tool.unbreakable", "Unbreakable")
+            ))]
+        });
     }
     let requires = requires_tool(h, block);
     if !requires && !on(h, "harvest_effective") {
@@ -586,7 +808,11 @@ fn harvest_tool(h: &dyn ClientHost, block: &str) -> Option<Vec<El>> {
     }
     let mut els: Vec<El> = tools.iter().map(|t| Line::small(t)).collect();
     if requires {
-        els.push(El::Mark(if held_correct(h, block) { "§a✔".to_owned() } else { "§c✕".to_owned() }));
+        els.push(El::Mark(if held_correct(h, block) {
+            "§a✔".to_owned()
+        } else {
+            "§c✕".to_owned()
+        }));
     }
     Some(els)
 }
@@ -608,74 +834,199 @@ fn tag_str(t: Option<&Tag>) -> Option<String> {
 }
 
 fn cget<'a>(c: &'a Compound, key: &str) -> Option<&'a Tag> {
-    c.iter().find(|(k, _)| k.to_string_lossy() == key).map(|(_, v)| v)
+    c.iter()
+        .find(|(k, _)| k.to_string_lossy() == key)
+        .map(|(_, v)| v)
 }
 
 /// Jade's own client lines for a block (VanillaPlugin's client components): growth, redstone, note blocks, TNT,
 /// beehives' honey, enchanting power, signs and block details.
-fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, real: &str, state: &str, details: bool, lines: &mut Vec<Line>) {
+fn vanilla_block(
+    h: &dyn ClientHost,
+    pos: [i32; 3],
+    block: &str,
+    real: &str,
+    state: &str,
+    details: bool,
+    lines: &mut Vec<Line>,
+) {
     let p = |k: &str| prop(state, k);
     // CropProgressProvider.
-    if let Some(age) = p("age").and_then(|a| a.parse::<u32>().ok()).filter(|_| on(h, "crop_progress")) {
-        let most = bkey(h, block).and_then(|k| h.block_states().definition(k)).and_then(|defs| defs.iter().find(|d| d.name == "age").map(|d| d.values.iter().filter_map(|v| v.parse::<u32>().ok()).max().unwrap_or(7))).unwrap_or(7).max(1);
+    if let Some(age) = p("age")
+        .and_then(|a| a.parse::<u32>().ok())
+        .filter(|_| on(h, "crop_progress"))
+    {
+        let most = bkey(h, block)
+            .and_then(|k| h.block_states().definition(k))
+            .and_then(|defs| {
+                defs.iter().find(|d| d.name == "age").map(|d| {
+                    d.values
+                        .iter()
+                        .filter_map(|v| v.parse::<u32>().ok())
+                        .max()
+                        .unwrap_or(7)
+                })
+            })
+            .unwrap_or(7)
+            .max(1);
         let crop = block.ends_with("_crop")
-            || matches!(block, "minecraft:wheat" | "minecraft:carrots" | "minecraft:potatoes" | "minecraft:beetroots" | "minecraft:melon_stem" | "minecraft:pumpkin_stem" | "minecraft:sweet_berry_bush" | "minecraft:nether_wart" | "minecraft:cocoa" | "minecraft:torchflower_crop" | "minecraft:pitcher_crop");
+            || matches!(
+                block,
+                "minecraft:wheat"
+                    | "minecraft:carrots"
+                    | "minecraft:potatoes"
+                    | "minecraft:beetroots"
+                    | "minecraft:melon_stem"
+                    | "minecraft:pumpkin_stem"
+                    | "minecraft:sweet_berry_bush"
+                    | "minecraft:nether_wart"
+                    | "minecraft:cocoa"
+                    | "minecraft:torchflower_crop"
+                    | "minecraft:pitcher_crop"
+            );
         if crop {
-            lines.push(Line::text(if age >= most { format!("§a{}", tr(h, "tooltip.jade.crop_mature", "Mature")) } else { trf(h, "tooltip.jade.crop_growth", "Growth: %s", &[&format!("§f{}%", age * 100 / most)]) }));
+            lines.push(Line::text(if age >= most {
+                format!("§a{}", tr(h, "tooltip.jade.crop_mature", "Mature"))
+            } else {
+                trf(
+                    h,
+                    "tooltip.jade.crop_growth",
+                    "Growth: %s",
+                    &[&format!("§f{}%", age * 100 / most)],
+                )
+            }));
         }
     }
     // RedstoneProvider: a lever's state, a repeater's delay, a comparator's mode, redstone power.
     let redstone = on(h, "redstone");
     if redstone && block == "minecraft:lever" {
         let lit = p("powered").as_deref() == Some("true");
-        let s = if lit { format!("§a{}", tr(h, "tooltip.jade.state_on", "On")) } else { format!("§c{}", tr(h, "tooltip.jade.state_off", "Off")) };
+        let s = if lit {
+            format!("§a{}", tr(h, "tooltip.jade.state_on", "On"))
+        } else {
+            format!("§c{}", tr(h, "tooltip.jade.state_off", "Off"))
+        };
         lines.push(Line::text(trf(h, "tooltip.jade.state", "State: %s", &[&s])));
     }
     if redstone && block == "minecraft:repeater" {
-        lines.push(Line::text(trf(h, "tooltip.jade.delay", "Delay: %d", &[&format!("§f{}", p("delay").unwrap_or_default())])));
+        lines.push(Line::text(trf(
+            h,
+            "tooltip.jade.delay",
+            "Delay: %d",
+            &[&format!("§f{}", p("delay").unwrap_or_default())],
+        )));
     }
     if redstone && block == "minecraft:comparator" {
-        let m = if p("mode").as_deref() == Some("subtract") { tr(h, "tooltip.jade.mode_subtractor", "Subtractor") } else { tr(h, "tooltip.jade.mode_comparator", "Comparator") };
-        lines.push(Line::text(trf(h, "tooltip.jade.mode", "Mode: %s", &[&format!("§f{m}")])));
+        let m = if p("mode").as_deref() == Some("subtract") {
+            tr(h, "tooltip.jade.mode_subtractor", "Subtractor")
+        } else {
+            tr(h, "tooltip.jade.mode_comparator", "Comparator")
+        };
+        lines.push(Line::text(trf(
+            h,
+            "tooltip.jade.mode",
+            "Mode: %s",
+            &[&format!("§f{m}")],
+        )));
     }
     if let Some(power) = p("power").filter(|_| redstone)
-        && !matches!(block, "minecraft:comparator" | "minecraft:lever" | "minecraft:repeater")
+        && !matches!(
+            block,
+            "minecraft:comparator" | "minecraft:lever" | "minecraft:repeater"
+        )
     {
-        lines.push(Line::text(trf(h, "tooltip.jade.power", "Power: %d", &[&format!("§f{power}")])));
+        lines.push(Line::text(trf(
+            h,
+            "tooltip.jade.power",
+            "Power: %d",
+            &[&format!("§f{power}")],
+        )));
     }
     // NoteBlockProvider.
     if block == "minecraft:note_block" && on(h, "note_block") {
         let inst = p("instrument").unwrap_or_default();
         let fallback = match inst.as_str() {
-            "basedrum" => "Bass Drum", "snare" => "Snare Drum", "hat" => "Clicks and Sticks", "bass" => "Bass", "flute" => "Flute", "bell" => "Bells",
-            "guitar" => "Guitar", "chime" => "Chimes", "xylophone" => "Xylophone", "iron_xylophone" => "Vibraphone", "cow_bell" => "Cow Bell",
-            "didgeridoo" => "Didgeridoo", "bit" => "Square Wave", "banjo" => "Banjo", "pling" => "Electric Piano", "zombie" => "Zombie",
-            "skeleton" => "Skeleton", "creeper" => "Creeper", "dragon" => "Dragon", "wither_skeleton" => "Wither Skeleton", "piglin" => "Piglin",
-            "custom_head" => "Custom Head", _ => "Harp",
+            "basedrum" => "Bass Drum",
+            "snare" => "Snare Drum",
+            "hat" => "Clicks and Sticks",
+            "bass" => "Bass",
+            "flute" => "Flute",
+            "bell" => "Bells",
+            "guitar" => "Guitar",
+            "chime" => "Chimes",
+            "xylophone" => "Xylophone",
+            "iron_xylophone" => "Vibraphone",
+            "cow_bell" => "Cow Bell",
+            "didgeridoo" => "Didgeridoo",
+            "bit" => "Square Wave",
+            "banjo" => "Banjo",
+            "pling" => "Electric Piano",
+            "zombie" => "Zombie",
+            "skeleton" => "Skeleton",
+            "creeper" => "Creeper",
+            "dragon" => "Dragon",
+            "wither_skeleton" => "Wither Skeleton",
+            "piglin" => "Piglin",
+            "custom_head" => "Custom Head",
+            _ => "Harp",
         };
         let name = tr(h, &format!("jade.instrument.{inst}"), fallback);
         let note: usize = p("note").and_then(|n| n.parse().ok()).unwrap_or(0);
-        const NOTES: [&str; 12] = ["F♯", "G", "G♯", "A", "A♯", "B", "C", "C♯", "D", "D♯", "E", "F"];
-        let octave = if note < 6 { 1 } else if note < 18 { 2 } else { 3 };
-        lines.push(Line::text(format!("§f{name} - {}{octave}", NOTES[note % 12])));
+        const NOTES: [&str; 12] = [
+            "F♯", "G", "G♯", "A", "A♯", "B", "C", "C♯", "D", "D♯", "E", "F",
+        ];
+        let octave = if note < 6 {
+            1
+        } else if note < 18 {
+            2
+        } else {
+            3
+        };
+        lines.push(Line::text(format!(
+            "§f{name} - {}{octave}",
+            NOTES[note % 12]
+        )));
     }
     // TNTStabilityProvider.
-    if block == "minecraft:tnt" && p("unstable").as_deref() == Some("true") && on(h, "tnt_stability") {
-        lines.push(Line::text(format!("§c{}", tr(h, "jade.tnt.unstable", "Unstable"))));
+    if block == "minecraft:tnt"
+        && p("unstable").as_deref() == Some("true")
+        && on(h, "tnt_stability")
+    {
+        lines.push(Line::text(format!(
+            "§c{}",
+            tr(h, "jade.tnt.unstable", "Unstable")
+        )));
     }
     // BeehiveProvider.Client: the honey level.
     if let Some(hl) = p("honey_level").filter(|_| on(h, "beehive")) {
-        lines.push(Line::text(trf(h, "jade.beehive.honey", "Honey: %s", &[&format!("§f{}", trf(h, "jade.fraction", "%d / %d", &[&hl, "5"]))])));
+        lines.push(Line::text(trf(
+            h,
+            "jade.beehive.honey",
+            "Honey: %s",
+            &[&format!(
+                "§f{}",
+                trf(h, "jade.fraction", "%d / %d", &[&hl, "5"])
+            )],
+        )));
     }
     // EnchantmentPowerProvider: any block whose enchanting power bonus is positive.
     if on(h, "enchantment_power")
         && let Some(level) = level(h)
-        && let Some(bs) = if block == real { level.block_state(h, pos) } else { bkey(h, block).and_then(|k| h.block_state_default(k)) }
+        && let Some(bs) = if block == real {
+            level.block_state(h, pos)
+        } else {
+            bkey(h, block).and_then(|k| h.block_state_default(k))
+        }
         && let Ok(power) = level.get_enchant_power_bonus(h, pos, bs, pos)
         && power.is_finite()
         && power > 0.0
     {
-        lines.push(Line::text(trf(h, "jade.ench_power", "Ench Power: %s", &[&format!("§f{}", trim2(f64::from(power)))])));
+        lines.push(Line::text(trf(
+            h,
+            "jade.ench_power",
+            "Ench Power: %s",
+            &[&format!("§f{}", trim2(f64::from(power)))],
+        )));
     }
     // SignProvider: the side the player faces, line by line.
     if access(h, "access_sign")
@@ -683,39 +1034,108 @@ fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, real: &str, sta
         && let Some(data) = block_entity_data(h, pos)
     {
         let front = sign_front_faces(h, pos, state);
-        lines.push(Line::text(if front { tr(h, "jade.access.sign.front", "Front:") } else { tr(h, "jade.access.sign.back", "Back:") }));
-        const LINES: [(&str, &str); 4] = [("jade.access.sign.line1", "First line: %s"), ("jade.access.sign.line2", "Second line: %s"), ("jade.access.sign.line3", "Third line: %s"), ("jade.access.sign.line4", "Fourth line: %s")];
+        lines.push(Line::text(if front {
+            tr(h, "jade.access.sign.front", "Front:")
+        } else {
+            tr(h, "jade.access.sign.back", "Back:")
+        }));
+        const LINES: [(&str, &str); 4] = [
+            ("jade.access.sign.line1", "First line: %s"),
+            ("jade.access.sign.line2", "Second line: %s"),
+            ("jade.access.sign.line3", "Third line: %s"),
+            ("jade.access.sign.line4", "Fourth line: %s"),
+        ];
         for (i, line) in sign_lines(&data, front).iter().enumerate().take(4) {
-            lines.push(Line::text(if details { trf(h, LINES[i].0, LINES[i].1, &[line]) } else { format!("§f{line}") }));
+            lines.push(Line::text(if details {
+                trf(h, LINES[i].0, LINES[i].1, &[line])
+            } else {
+                format!("§f{line}")
+            }));
         }
     }
     if access(h, "access_block") {
         // BlockDetailsBodyProvider.
         let dir_name = |d: &str| tr(h, &format!("jade.{d}"), &words(d));
         if block == "minecraft:redstone_wire" {
-            let sides: Vec<String> = ["north", "south", "west", "east"].into_iter().filter(|d| p(d).is_some_and(|v| v != "none")).map(dir_name).collect();
-            lines.push(Line::text(if sides.is_empty() { tr(h, "jade.access.block.redstone_wire.dot", "Shape: Dot") } else { trf(h, "jade.access.block.redstone_wire", "Shape: %s", &[&sides.join(", ")]) }));
-        } else if !(block.ends_with("campfire") || matches!(block, "minecraft:decorated_pot" | "minecraft:small_dripleaf" | "minecraft:big_dripleaf" | "minecraft:big_dripleaf_stem" | "minecraft:pink_petals" | "minecraft:wildflowers")) {
+            let sides: Vec<String> = ["north", "south", "west", "east"]
+                .into_iter()
+                .filter(|d| p(d).is_some_and(|v| v != "none"))
+                .map(dir_name)
+                .collect();
+            lines.push(Line::text(if sides.is_empty() {
+                tr(h, "jade.access.block.redstone_wire.dot", "Shape: Dot")
+            } else {
+                trf(
+                    h,
+                    "jade.access.block.redstone_wire",
+                    "Shape: %s",
+                    &[&sides.join(", ")],
+                )
+            }));
+        } else if !(block.ends_with("campfire")
+            || matches!(
+                block,
+                "minecraft:decorated_pot"
+                    | "minecraft:small_dripleaf"
+                    | "minecraft:big_dripleaf"
+                    | "minecraft:big_dripleaf_stem"
+                    | "minecraft:pink_petals"
+                    | "minecraft:wildflowers"
+            ))
+        {
             if let Some(shape) = p("shape").filter(|_| block.ends_with("rail")) {
-                let english = words(&shape.replace("north_south", "north-south").replace("east_west", "east-west"));
-                lines.push(Line::text(tr(h, &format!("jade.access.block.rail.{shape}"), &english)));
+                let english = words(
+                    &shape
+                        .replace("north_south", "north-south")
+                        .replace("east_west", "east-west"),
+                );
+                lines.push(Line::text(tr(
+                    h,
+                    &format!("jade.access.block.rail.{shape}"),
+                    &english,
+                )));
             }
             if let Some(facing) = p("facing") {
-                lines.push(Line::text(trf(h, "jade.access.block.facing", "Facing: %s", &[&dir_name(&facing)])));
+                lines.push(Line::text(trf(
+                    h,
+                    "jade.access.block.facing",
+                    "Facing: %s",
+                    &[&dir_name(&facing)],
+                )));
             }
         }
         // BlockAmountProvider.
         if let Some(n) = p("pickles").or_else(|| p("candles")).or_else(|| p("eggs")) {
-            lines.push(Line::text(trf(h, "jade.access.block.amount", "Amount: {0}", &[&n])));
+            lines.push(Line::text(trf(
+                h,
+                "jade.access.block.amount",
+                "Amount: {0}",
+                &[&n],
+            )));
         }
         if let Some(n) = p("bites") {
-            lines.push(Line::text(trf(h, "jade.access.block.bites", "Bites: {0}", &[&n])));
+            lines.push(Line::text(trf(
+                h,
+                "jade.access.block.bites",
+                "Bites: {0}",
+                &[&n],
+            )));
         }
         if let Some(n) = p("layers") {
-            lines.push(Line::text(trf(h, "jade.access.block.layers", "Layers: {0}", &[&n])));
+            lines.push(Line::text(trf(
+                h,
+                "jade.access.block.layers",
+                "Layers: {0}",
+                &[&n],
+            )));
         }
         if let Some(n) = p("level").filter(|_| block.ends_with("_cauldron")) {
-            lines.push(Line::text(trf(h, "jade.access.block.level", "Level: {0}", &[&n])));
+            lines.push(Line::text(trf(
+                h,
+                "jade.access.block.level",
+                "Level: {0}",
+                &[&n],
+            )));
         }
     }
     // TotalEnchantmentPowerProvider: the enchanting power contributed by valid surrounding blocks.
@@ -731,7 +1151,9 @@ fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, real: &str, sta
                 }
                 for dy in 0..=1 {
                     let mid = [pos[0] + dx / 2, pos[1] + dy, pos[2] + dz / 2];
-                    if !level.block(h, mid).is_some_and(|b| h.block_in_tag(b, "minecraft:enchantment_power_transmitter") == Some(true)) {
+                    if !level.block(h, mid).is_some_and(|b| {
+                        block_in_tag(h, b, "minecraft:enchantment_power_transmitter")
+                    }) {
                         continue;
                     }
                     let shelf = [pos[0] + dx, pos[1] + dy, pos[2] + dz];
@@ -746,21 +1168,38 @@ fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, real: &str, sta
             }
         }
         if power > 0.0 {
-            lines.push(Line::text(trf(h, "jade.ench_power", "Ench Power: %s", &[&format!("§f{}", trim2(f64::from(power)))])));
+            lines.push(Line::text(trf(
+                h,
+                "jade.ench_power",
+                "Ench Power: %s",
+                &[&format!("§f{}", trim2(f64::from(power)))],
+            )));
         }
     }
 }
 
 /// A sign's lines, front or back, as plain text (`front_text.messages`, JSON components or strings).
 fn sign_lines(data: &Compound, front: bool) -> Vec<String> {
-    let Some(Tag::Compound(side)) = cget(data, if front { "front_text" } else { "back_text" }) else { return Vec::new() };
-    let Some(Tag::List(msgs)) = cget(side, "messages") else { return Vec::new() };
+    let Some(Tag::Compound(side)) = cget(data, if front { "front_text" } else { "back_text" })
+    else {
+        return Vec::new();
+    };
+    let Some(Tag::List(msgs)) = cget(side, "messages") else {
+        return Vec::new();
+    };
     msgs.iter()
         .map(|m| match m {
             Tag::String(s) => {
                 let s = s.to_string_lossy();
                 // A JSON component's text, or the string itself.
-                mod_api::serde_json::from_str::<mod_api::serde_json::Value>(&s).ok().and_then(|v| v.as_str().map(str::to_owned).or_else(|| v.get("text").and_then(|t| t.as_str()).map(str::to_owned))).unwrap_or(s)
+                mod_api::serde_json::from_str::<mod_api::serde_json::Value>(&s)
+                    .ok()
+                    .and_then(|v| {
+                        v.as_str()
+                            .map(str::to_owned)
+                            .or_else(|| v.get("text").and_then(|t| t.as_str()).map(str::to_owned))
+                    })
+                    .unwrap_or(s)
             }
             Tag::Compound(c) => tag_str(cget(c, "text")).unwrap_or_default(),
             _ => String::new(),
@@ -780,14 +1219,23 @@ fn sign_front_faces(h: &dyn ClientHost, pos: [i32; 3], state: &str) -> bool {
             _ => 0.0,
         },
     };
-    let (dx, dz) = (eye[0] - (f64::from(pos[0]) + 0.5), eye[2] - (f64::from(pos[2]) + 0.5));
+    let (dx, dz) = (
+        eye[0] - (f64::from(pos[0]) + 0.5),
+        eye[2] - (f64::from(pos[2]) + 0.5),
+    );
     let toward = (dz.atan2(dx).to_degrees() - 90.0) as f32;
     let diff = (toward - rotation + 540.0).rem_euclid(360.0) - 180.0;
     diff.abs() <= 90.0
 }
 
 /// AccessibilityPlugin.replaceTitle for a block: the patterns of `jade.access.block.*` its state calls for.
-fn access_title(h: &dyn ClientHost, pos: [i32; 3], block: &str, state: &str, mut title: String) -> String {
+fn access_title(
+    h: &dyn ClientHost,
+    pos: [i32; 3],
+    block: &str,
+    state: &str,
+    mut title: String,
+) -> String {
     if !access(h, "access_block") {
         return title;
     }
@@ -795,9 +1243,19 @@ fn access_title(h: &dyn ClientHost, pos: [i32; 3], block: &str, state: &str, mut
     let p = |k: &str| prop(state, k);
     let yes = |k: &str| p(k).as_deref() == Some("true");
     if p("open").is_some() && block != "minecraft:barrel" {
-        wrap(&if yes("open") { tr(h, "jade.access.block.door_open", "{0}") } else { tr(h, "jade.access.block.door_closed", "Closed {0}") });
+        wrap(&if yes("open") {
+            tr(h, "jade.access.block.door_open", "{0}")
+        } else {
+            tr(h, "jade.access.block.door_closed", "Closed {0}")
+        });
     }
-    for (key, pattern) in [("waterlogged", "Waterlogged {0}"), ("lit", "Lit {0}"), ("inverted", "Inverted {0}"), ("eye", "{0} with Eye"), ("ominous", "Ominous {0}")] {
+    for (key, pattern) in [
+        ("waterlogged", "Waterlogged {0}"),
+        ("lit", "Lit {0}"),
+        ("inverted", "Inverted {0}"),
+        ("eye", "{0} with Eye"),
+        ("ominous", "Ominous {0}"),
+    ] {
         if yes(key) {
             wrap(&tr(h, &format!("jade.access.block.{key}"), pattern));
         }
@@ -805,7 +1263,15 @@ fn access_title(h: &dyn ClientHost, pos: [i32; 3], block: &str, state: &str, mut
     if p("moisture").as_deref() == Some("7") {
         wrap(&tr(h, "jade.access.block.hydrated", "Hydrated {0}"));
     }
-    for (key, lang, pattern) in [("locked", "jade.access.block.locked", "Locked {0}"), ("extended", "jade.access.block.extended", "Extended {0}"), ("can_summon", "jade.access.block.summonable", "Summonable {0}")] {
+    for (key, lang, pattern) in [
+        ("locked", "jade.access.block.locked", "Locked {0}"),
+        ("extended", "jade.access.block.extended", "Extended {0}"),
+        (
+            "can_summon",
+            "jade.access.block.summonable",
+            "Summonable {0}",
+        ),
+    ] {
         if yes(key) {
             wrap(&tr(h, lang, pattern));
         }
@@ -818,15 +1284,24 @@ fn access_title(h: &dyn ClientHost, pos: [i32; 3], block: &str, state: &str, mut
         Some("2") => wrap(&tr(h, "jade.access.block.hatch.2", "Cracked {0}")),
         _ => {}
     }
-    if yes("powered") && (block == "minecraft:repeater" || block.ends_with("rail") || block.ends_with("_shelf")) {
+    if yes("powered")
+        && (block == "minecraft:repeater" || block.ends_with("rail") || block.ends_with("_shelf"))
+    {
         wrap(&tr(h, "jade.access.block.powered", "Powered {0}"));
     }
-    let active = p("vault_state").as_deref() == Some("active") || p("trial_spawner_state").as_deref() == Some("active") || (block == "minecraft:creaking_heart" && p("creaking_heart_state").as_deref() != Some("uprooted"));
+    let active = p("vault_state").as_deref() == Some("active")
+        || p("trial_spawner_state").as_deref() == Some("active")
+        || (block == "minecraft:creaking_heart"
+            && p("creaking_heart_state").as_deref() != Some("uprooted"));
     if active {
         wrap(&tr(h, "jade.access.block.active", "Active {0}"));
     }
     // WaxedProvider.BlockComponent.
-    if on(h, "waxed") && block.ends_with("_sign") && block_entity_data(h, pos).is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1)))) {
+    if on(h, "waxed")
+        && block.ends_with("_sign")
+        && block_entity_data(h, pos)
+            .is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1))))
+    {
         wrap(&tr(h, "jade.access.waxed", "Waxed {0}"));
     }
     title
@@ -845,15 +1320,36 @@ fn head_owner(h: &dyn ClientHost, pos: [i32; 3]) -> Option<String> {
 
 /// The information options: BlockFaceProvider, CoordinatesProvider, DistanceProvider, BlockStatesProvider,
 /// BlockPropertiesProvider, RegistryNameProvider.
-fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: &[String], lines: &mut Vec<Line>) {
+fn info_lines(
+    h: &dyn ClientHost,
+    seen: &Seen,
+    kind: Option<&str>,
+    special_ids: &[String],
+    lines: &mut Vec<Line>,
+) {
     let (eye, _) = aim(h).unwrap_or(([0.0; 3], [0.0; 3]));
     if let Seen::Block { face, .. } = seen
         && on(h, "block_face")
         && let Some(first) = lines.first_mut()
     {
-        const FACES: [([i32; 3], &str); 6] = [([0, -1, 0], "down"), ([0, 1, 0], "up"), ([0, 0, -1], "north"), ([0, 0, 1], "south"), ([-1, 0, 0], "west"), ([1, 0, 0], "east")];
+        const FACES: [([i32; 3], &str); 6] = [
+            ([0, -1, 0], "down"),
+            ([0, 1, 0], "up"),
+            ([0, 0, -1], "north"),
+            ([0, 0, 1], "south"),
+            ([-1, 0, 0], "west"),
+            ([1, 0, 0], "east"),
+        ];
         if let Some((_, name)) = FACES.iter().find(|(d, _)| d == face) {
-            first.els.push(El::Text(format!("§f{}", trf(h, "jade.blockFace", " (%s)", &[&tr(h, &format!("jade.{name}"), &words(name))]))));
+            first.els.push(El::Text(format!(
+                "§f{}",
+                trf(
+                    h,
+                    "jade.blockFace",
+                    " (%s)",
+                    &[&tr(h, &format!("jade.{name}"), &words(name))]
+                )
+            )));
         }
     }
     let (coords, distance) = (on(h, "coordinates"), on(h, "distance"));
@@ -867,8 +1363,25 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: 
         if coords {
             // Relative only while Ctrl is held.
             let ctrl = h.modifiers().bits & 2 != 0;
-            let at = if on(h, "coordinates_rel") && ctrl { [at[0] - eye[0].floor() as i32, at[1] - eye[1].floor() as i32, at[2] - eye[2].floor() as i32] } else { at };
-            let mut l = trf(h, "jade.blockpos", "%s %s %s", &[&format!("§#EF9A9A{}", at[0]), &format!("§#A5D6A7{}", at[1]), &format!("§#90CAF9{}", at[2])]);
+            let at = if on(h, "coordinates_rel") && ctrl {
+                [
+                    at[0] - eye[0].floor() as i32,
+                    at[1] - eye[1].floor() as i32,
+                    at[2] - eye[2].floor() as i32,
+                ]
+            } else {
+                at
+            };
+            let mut l = trf(
+                h,
+                "jade.blockpos",
+                "%s %s %s",
+                &[
+                    &format!("§#EF9A9A{}", at[0]),
+                    &format!("§#A5D6A7{}", at[1]),
+                    &format!("§#90CAF9{}", at[2]),
+                ],
+            );
             if distance {
                 l.push_str(&format!("§r{}", trf(h, "jade.distance1", " [%s]", &[&d])));
             }
@@ -883,9 +1396,22 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: 
         _ => true,
     };
     match seen {
-        Seen::Block { pos, block, real, state, .. } => {
+        Seen::Block {
+            pos,
+            block,
+            real,
+            state,
+            ..
+        } => {
             // A camouflaged block shows its disguise's default state.
-            let state = if block == real { state.clone() } else { bkey(h, block).and_then(|k| h.block_state_default(k)).and_then(|s| h.block_state_string(s)).unwrap_or_else(|| block.clone()) };
+            let state = if block == real {
+                state.clone()
+            } else {
+                bkey(h, block)
+                    .and_then(|k| h.block_state_default(k))
+                    .and_then(|s| h.block_state_string(s))
+                    .unwrap_or_else(|| block.clone())
+            };
             if on(h, "block_states") {
                 let mut ps = props(&state);
                 ps.sort();
@@ -897,9 +1423,19 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: 
                 // BlockPropertiesProvider. Speed and jump factors and fire's odds have no read in the mod API yet, so
                 // their lines are left out until it has one (jade-facts.md).
                 let f = crate::facts::fact(h, block).unwrap_or_default();
-                lines.push(Line::text(trf(h, "jade.block_destroy_time", "Destroy time: %s", &[&format!("§f{}", trim2(f64::from(f.hardness)))])));
+                lines.push(Line::text(trf(
+                    h,
+                    "jade.block_destroy_time",
+                    "Destroy time: %s",
+                    &[&format!("§f{}", trim2(f64::from(f.hardness)))],
+                )));
                 if let Some(r) = f.explosion_resistance {
-                    lines.push(Line::text(trf(h, "jade.block_explosion_resistance", "Explosion resistance: %s", &[&format!("§f{}", trim2(f64::from(r)))])));
+                    lines.push(Line::text(trf(
+                        h,
+                        "jade.block_explosion_resistance",
+                        "Explosion resistance: %s",
+                        &[&format!("§f{}", trim2(f64::from(r)))],
+                    )));
                 }
             }
             if show_id {
@@ -915,10 +1451,21 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: 
                             lines.push(Line::text(format!("§8{}", trf(h, "config.jade.plugin_jade.registry_name.special.block_entity_type", "BlockEntity: %s", &[id]))));
                         }
                     }
-                    if let Some(fs) = h.block_state_id(&state).and_then(|bs| h.state_fluid_state(bs)).filter(|fs| !fs.is_empty())
+                    if let Some(fs) = h
+                        .block_state_id(&state)
+                        .and_then(|bs| bs.fluid_state(&h.block_states()))
+                        .filter(|fs| !fs.is_empty())
                         && let Some(fluid) = fs.fluid.id(h)
                     {
-                        lines.push(Line::text(format!("§8{}", trf(h, "config.jade.plugin_jade.registry_name.special.fluid", "Fluid: %s", &[fluid]))));
+                        lines.push(Line::text(format!(
+                            "§8{}",
+                            trf(
+                                h,
+                                "config.jade.plugin_jade.registry_name.special.fluid",
+                                "Fluid: %s",
+                                &[fluid]
+                            )
+                        )));
                     }
                 }
             }
@@ -940,24 +1487,40 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: 
 fn block_icon_components(h: &dyn ClientHost, pos: [i32; 3], block: &str) -> Option<Compound> {
     let data = block_entity_data(h, pos)?;
     let mut patch = Compound::new();
-    if matches!(block, "minecraft:player_head" | "minecraft:player_wall_head") {
+    if matches!(
+        block,
+        "minecraft:player_head" | "minecraft:player_wall_head"
+    ) {
         if let Some(profile) = cget(&data, "profile") {
             patch.insert(JavaString::from("minecraft:profile"), profile.clone());
         }
     } else if block == "minecraft:decorated_pot" {
         if let Some(sherds) = cget(&data, "sherds") {
-            patch.insert(JavaString::from("minecraft:pot_decorations"), sherds.clone());
+            patch.insert(
+                JavaString::from("minecraft:pot_decorations"),
+                sherds.clone(),
+            );
         }
     } else if block.ends_with("_banner")
         && let Some(patterns) = cget(&data, "patterns")
     {
-        patch.insert(JavaString::from("minecraft:banner_patterns"), patterns.clone());
+        patch.insert(
+            JavaString::from("minecraft:banner_patterns"),
+            patterns.clone(),
+        );
     }
     (!patch.is_empty()).then_some(patch)
 }
 
 /// What a server line says about the box rather than in it: the icon, the title's pattern and the mob's stats.
-fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option<String>, icon_components: &mut Option<Compound>, badge: &mut bool, special_ids: &mut Vec<String>) {
+fn apply_directives(
+    h: &dyn ClientHost,
+    lines: &mut Vec<Line>,
+    icon: &mut Option<String>,
+    icon_components: &mut Option<Compound>,
+    badge: &mut bool,
+    special_ids: &mut Vec<String>,
+) {
     let mut titles: Vec<String> = Vec::new();
     let mut stats = None;
     let mut any = false;
@@ -1008,7 +1571,10 @@ fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option
     });
     if let Some(El::Text(title)) = lines.first_mut().and_then(|l| l.els.first_mut()) {
         for pattern in &titles {
-            let now = title.strip_prefix("§f").unwrap_or(title.as_str()).to_owned();
+            let now = title
+                .strip_prefix("§f")
+                .unwrap_or(title.as_str())
+                .to_owned();
             *title = format!("§f{}", fill(pattern, &[&now]));
         }
     }
@@ -1028,7 +1594,11 @@ fn apply_directives(h: &dyn ClientHost, lines: &mut Vec<Line>, icon: &mut Option
             let armor_text = armor > num(h, "armor_max") as f32;
             let hearts_text = hearts_at.is_some_and(|i| {
                 lines[i].els.iter().any(|e| match e {
-                    El::Hearts { max, absorb, .. } => (((max.ceil() + absorb.ceil()) / 2.0).ceil() * 2.0) > num(h, "health_max") as f32 || on(h, "health_fractions"),
+                    El::Hearts { max, absorb, .. } => {
+                        (((max.ceil() + absorb.ceil()) / 2.0).ceil() * 2.0)
+                            > num(h, "health_max") as f32
+                            || on(h, "health_fractions")
+                    }
                     _ => false,
                 })
             });
@@ -1093,27 +1663,62 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
     let theme = theme::current(h);
     let mut badge = false;
     let (mut icon, mut icon_components, title, ns, kind) = match seen {
-        Seen::Block { pos, block, state, .. } => {
-            let target = Target::Block { pos: *pos, block: block.clone(), state: state.clone(), hit: [0.0; 3] };
-            let named = api::registry(|r| r.names.clone()).into_iter().find_map(|f| f(h, &target));
+        Seen::Block {
+            pos, block, state, ..
+        } => {
+            let target = Target::Block {
+                pos: *pos,
+                block: block.clone(),
+                state: state.clone(),
+                hit: [0.0; 3],
+            };
+            let named = api::registry(|r| r.names.clone())
+                .into_iter()
+                .find_map(|f| f(h, &target));
             match named {
-                Some((icon, title, ns)) => (Some(icon).filter(|i| gfx::item_key(h, i).is_some()), None, title, ns, None),
+                Some((icon, title, ns)) => (
+                    Some(icon).filter(|i| gfx::item_key(h, i).is_some()),
+                    None,
+                    title,
+                    ns,
+                    None,
+                ),
                 // PlayerHeadProvider: a head with an owner is named after them.
-                None if matches!(block.as_str(), "minecraft:player_head" | "minecraft:player_wall_head") && on(h, "player_head") => {
+                None if matches!(
+                    block.as_str(),
+                    "minecraft:player_head" | "minecraft:player_wall_head"
+                ) && on(h, "player_head") =>
+                {
                     let title = match head_owner(h, *pos) {
-                        Some(owner) => tr(h, "block.minecraft.player_head.named", "%s's Head").replace("%s", &owner),
+                        Some(owner) => tr(h, "block.minecraft.player_head.named", "%s's Head")
+                            .replace("%s", &owner),
                         None => item_name(h, "minecraft:player_head"),
                     };
-                    (Some("minecraft:player_head".to_owned()), block_icon_components(h, *pos, block), title, "minecraft".to_owned(), None)
+                    (
+                        Some("minecraft:player_head".to_owned()),
+                        block_icon_components(h, *pos, block),
+                        title,
+                        "minecraft".to_owned(),
+                        None,
+                    )
                 }
                 None => {
                     let item = block_item(h, block);
                     if item.is_none()
-                        && let Some(fs) = h.block_state_id(state).and_then(|bs| h.state_fluid_state(bs)).filter(|fs| !fs.is_empty())
+                        && let Some(fs) = h
+                            .block_state_id(state)
+                            .and_then(|bs| bs.fluid_state(&h.block_states()))
+                            .filter(|fs| !fs.is_empty())
                         && let Some(fluid_id) = fs.fluid.id(h)
                     {
-                        let bucket = h.fluid_bucket(fluid_id).and_then(|k| k.id(h).map(str::to_owned));
-                        let ns = fluid_id.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
+                        let bucket = fs
+                            .fluid
+                            .bucket(&h.block_states())
+                            .and_then(|k| k.id(h).map(str::to_owned));
+                        let ns = fluid_id
+                            .split_once(':')
+                            .map_or("minecraft", |(n, _)| n)
+                            .to_owned();
                         let name = h
                             .fluid_states()
                             .type_properties(fs.fluid)
@@ -1122,10 +1727,17 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
                         (bucket, None, name, ns, None)
                     } else {
                         // WaxedProvider.BlockComponent.getIcon.
-                        if on(h, "waxed") && block.ends_with("_sign") && block_entity_data(h, *pos).is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1)))) {
+                        if on(h, "waxed")
+                            && block.ends_with("_sign")
+                            && block_entity_data(h, *pos)
+                                .is_some_and(|d| matches!(cget(&d, "is_waxed"), Some(Tag::Byte(1))))
+                        {
                             badge = true;
                         }
-                        let ns = block.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
+                        let ns = block
+                            .split_once(':')
+                            .map_or("minecraft", |(n, _)| n)
+                            .to_owned();
                         let comp = block_icon_components(h, *pos, block);
                         (item, comp, block_name(h, block), ns, None)
                     }
@@ -1133,19 +1745,51 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
             }
         }
         Seen::Entity { id, .. } => {
-            let data = with(|c| c.entity_data.clone()).filter(|d| d.id == *id && d.at.elapsed().as_millis() < 2000)?;
-            if skip_entity(h, &data) || ignored_entity(h, &data.kind) || (!on(h, "display_bosses") && matches!(data.kind.as_str(), "minecraft:ender_dragon" | "minecraft:wither")) {
+            let data = with(|c| c.entity_data.clone())
+                .filter(|d| d.id == *id && d.at.elapsed().as_millis() < 2000)?;
+            if skip_entity(h, &data)
+                || ignored_entity(h, &data.kind)
+                || (!on(h, "display_bosses")
+                    && matches!(
+                        data.kind.as_str(),
+                        "minecraft:ender_dragon" | "minecraft:wither"
+                    ))
+            {
                 return None;
             }
-            let title = if data.name.is_empty() { entity_name(h, &data.kind) } else { resolve(h, &data.name) };
-            let ns = data.kind.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
+            let title = if data.name.is_empty() {
+                entity_name(h, &data.kind)
+            } else {
+                resolve(h, &data.name)
+            };
+            let ns = data
+                .kind
+                .split_once(':')
+                .map_or("minecraft", |(n, _)| n)
+                .to_owned();
             let valid = !data.icon.is_empty() && gfx::item_key(h, &data.icon).is_some();
-            (valid.then_some(data.icon), valid.then_some(data.icon_components).flatten(), title, ns, Some(data.kind))
+            (
+                valid.then_some(data.icon),
+                valid.then_some(data.icon_components).flatten(),
+                title,
+                ns,
+                Some(data.kind),
+            )
         }
     };
     let title = match seen {
-        Seen::Block { pos, block, state, real, .. } if on(h, "accessibility_plugin") => {
-            let state = if block == real { state.clone() } else { block.clone() };
+        Seen::Block {
+            pos,
+            block,
+            state,
+            real,
+            ..
+        } if on(h, "accessibility_plugin") => {
+            let state = if block == real {
+                state.clone()
+            } else {
+                block.clone()
+            };
             access_title(h, *pos, block, &state, title)
         }
         _ => title,
@@ -1170,17 +1814,47 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
     let mut lines = vec![title_line];
     lines.extend(tool_line);
     let target = match seen {
-        Seen::Block { pos, block, real, state, hit, .. } => {
+        Seen::Block {
+            pos,
+            block,
+            real,
+            state,
+            hit,
+            ..
+        } => {
             vanilla_block(h, *pos, block, real, state, details, &mut lines);
-            Target::Block { pos: *pos, block: block.clone(), state: state.clone(), hit: *hit }
+            Target::Block {
+                pos: *pos,
+                block: block.clone(),
+                state: state.clone(),
+                hit: *hit,
+            }
         }
         Seen::Entity { id, .. } => {
             if access(h, "access_entity")
-                && let Some(riders) = h.entity(*id).and_then(|e| e.passengers(h)).map(|v| v.len()).filter(|&n| n > 0)
+                && let Some(riders) = h
+                    .entity(*id)
+                    .map(|e| {
+                        let mut n = 0usize;
+                        let _ = e.visit_passengers(h, &mut |_| {
+                            n += 1;
+                            std::ops::ControlFlow::Continue(())
+                        });
+                        n
+                    })
+                    .filter(|&n| n > 0)
             {
-                lines.push(Line::text(trf(h, "jade.access.entity.passengers", "Passengers: {0}", &[&riders.to_string()])));
+                lines.push(Line::text(trf(
+                    h,
+                    "jade.access.entity.passengers",
+                    "Passengers: {0}",
+                    &[&riders.to_string()],
+                )));
             }
-            Target::Entity { id: *id, kind: kind.clone().unwrap_or_default() }
+            Target::Entity {
+                id: *id,
+                kind: kind.clone().unwrap_or_default(),
+            }
         }
     };
     for p in api::registry(|r| r.client.clone()) {
@@ -1206,14 +1880,23 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
     for l in &mut lines {
         for e in &mut l.els {
             match e {
-                El::Text(t) | El::Small(t) | El::Mark(t) | El::Title(t) | El::SpecialId(t) => *t = resolve(h, t),
+                El::Text(t) | El::Small(t) | El::Mark(t) | El::Title(t) | El::SpecialId(t) => {
+                    *t = resolve(h, t)
+                }
                 El::Bar { text, .. } | El::FluidBar { text, .. } => *text = resolve(h, text),
                 _ => {}
             }
         }
     }
     let mut special_ids = Vec::new();
-    apply_directives(h, &mut lines, &mut icon, &mut icon_components, &mut badge, &mut special_ids);
+    apply_directives(
+        h,
+        &mut lines,
+        &mut icon,
+        &mut icon_components,
+        &mut badge,
+        &mut special_ids,
+    );
     // IThemeHelper.title: the title in the theme's colour.
     if on(h, "object_name")
         && let Some(El::Text(text)) = lines.first_mut().and_then(|l| l.els.first_mut())
@@ -1230,14 +1913,23 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
     info_lines(h, seen, kind.as_deref(), &special_ids, &mut lines);
     if on(h, "mod_name") {
         let text = format!("{}{}", theme.mod_code, mod_name(h, &ns));
-        lines.push(if on(h, "mod_name_smaller") { Line::new().with(El::Small(text)) } else { Line::text(text) });
+        lines.push(if on(h, "mod_name_smaller") {
+            Line::new().with(El::Small(text))
+        } else {
+            Line::text(text)
+        });
     }
     if on(h, "debug_mode") {
         lines.push(Line::text(format!("§8{seen:?}")));
     }
     // BreakingProgressProvider: a line along the box's foot while the block is mined.
     let mining = match (seen, me(h).and_then(|(p, _)| p.block_breaking(h))) {
-        (Seen::Block { pos, block, .. }, Some(BlockBreakingState::Breaking { position, progress, .. })) if [position.x, position.y, position.z] == *pos && on(h, "breaking_progress") => {
+        (
+            Seen::Block { pos, block, .. },
+            Some(BlockBreakingState::Breaking {
+                position, progress, ..
+            }),
+        ) if [position.x, position.y, position.z] == *pos && on(h, "breaking_progress") => {
             let alpha = with(|c| {
                 c.progress_alpha = (c.progress_alpha + 0.05).min(0.6);
                 c.progress_alpha
@@ -1250,15 +1942,33 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
             None
         }
     };
-    Some(BuiltBox { lines, icon, icon_components, badge, mining, sneaky })
+    Some(BuiltBox {
+        lines,
+        icon,
+        icon_components,
+        badge,
+        mining,
+        sneaky,
+    })
 }
 
 /// `OverlayRenderer.renderOverlay`'s stand-in while the position is adjusted with nothing looked at: the Grass Block.
 pub fn sample_box(h: &dyn ClientHost) -> BuiltBox {
     let theme = theme::current(h);
-    let title = format!("{}{}", theme.title_code, item_name(h, "minecraft:grass_block"));
+    let title = format!(
+        "{}{}",
+        theme.title_code,
+        item_name(h, "minecraft:grass_block")
+    );
     let modname = format!("{}{}", theme.mod_code, mod_name(h, "minecraft"));
-    BuiltBox { lines: vec![Line::text(title), Line::text(modname)], icon: None, icon_components: None, badge: false, mining: None, sneaky: false }
+    BuiltBox {
+        lines: vec![Line::text(title), Line::text(modname)],
+        icon: None,
+        icon_components: None,
+        badge: false,
+        mining: None,
+        sneaky: false,
+    }
 }
 
 /// An element's size.
@@ -1268,7 +1978,9 @@ fn size(h: &dyn ClientHost, e: &El) -> (f32, f32) {
         El::Item { small: true, .. } | El::Stack { small: true, .. } => (10.0, 9.0),
         El::Item { .. } | El::Stack { .. } => (18.0, 18.0),
         El::Arrow(_) => (22.0, 16.0),
-        El::Bar { text, .. } | El::FluidBar { text, .. } => ((gfx::width(h, text) + 6.0).max(100.0), 12.0),
+        El::Bar { text, .. } | El::FluidBar { text, .. } => {
+            ((gfx::width(h, text) + 6.0).max(100.0), 12.0)
+        }
         El::Fluid(_) => (10.0, 9.0),
         El::Small(t) => (gfx::width(h, t) * 0.75, 7.0),
         El::Hearts { max, absorb, .. } => {
@@ -1287,12 +1999,21 @@ fn size(h: &dyn ClientHost, e: &El) -> (f32, f32) {
                 (gfx::width(h, &format!("{a:.0}")) + 10.0, 9.0)
             } else {
                 let icons = (a / 2.0).ceil();
-                (8.0 * icons.min(10.0) + 1.0, 5.0 + 4.0 * (icons / 10.0).ceil())
+                (
+                    8.0 * icons.min(10.0) + 1.0,
+                    5.0 + 4.0 * (icons / 10.0).ceil(),
+                )
             }
         }
         El::Space(w) => (*w, 0.0),
         El::Energy => (10.0, 9.0),
-        El::Mark(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } | El::SpecialId(_) => (0.0, 0.0),
+        El::Mark(_)
+        | El::Icon(_)
+        | El::StackIcon { .. }
+        | El::Badge
+        | El::Title(_)
+        | El::Stats { .. }
+        | El::SpecialId(_) => (0.0, 0.0),
     }
 }
 
@@ -1301,7 +2022,15 @@ fn hud_sprite(g: &mut Gfx<'_>, theme: &theme::Theme, name: &str, rect: [f32; 4])
     g.sprite(&atlas, [0.0, 0.0, 9.0, 9.0], rect, 0xFFFF_FFFF);
 }
 
-fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line: f32, look: &theme::TextLook) {
+fn draw_el(
+    g: &mut Gfx<'_>,
+    theme: &theme::Theme,
+    e: &El,
+    x: f32,
+    y: f32,
+    h_line: f32,
+    look: &theme::TextLook,
+) {
     let h = g.h;
     let (_, eh) = size(h, e);
     let y = y + ((h_line - eh) / 2.0).floor();
@@ -1310,23 +2039,51 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
         El::Item { id, count, small } => {
             draw_item_el(g, id, None, *count, *small, x, y, look);
         }
-        El::Stack { id, count, small, components } => {
+        El::Stack {
+            id,
+            count,
+            small,
+            components,
+        } => {
             draw_item_el(g, id, Some(components), *count, *small, x, y, look);
         }
         // JadeUI.progressArrow: jade:progress_base, then jade:progress clipped to the done part.
         El::Arrow(f) => {
-            g.sprite(&theme.sprite("jade:progress_base"), [0.0, 0.0, 22.0, 16.0], [x, y, 22.0, 16.0], 0xFFFF_FFFF);
+            g.sprite(
+                &theme.sprite("jade:progress_base"),
+                [0.0, 0.0, 22.0, 16.0],
+                [x, y, 22.0, 16.0],
+                0xFFFF_FFFF,
+            );
             let done = (22.0 * f.clamp(0.0, 1.0)).floor();
             if done > 0.0 {
-                g.sprite(&theme.sprite("jade:progress"), [0.0, 0.0, done, 16.0], [x, y, done, 16.0], 0xFFFF_FFFF);
+                g.sprite(
+                    &theme.sprite("jade:progress"),
+                    [0.0, 0.0, done, 16.0],
+                    [x, y, done, 16.0],
+                    0xFFFF_FFFF,
+                );
             }
         }
         // An energy or progress bar with its text.
         El::Bar { frac, color, text } => {
             let (w, _) = size(h, e);
             g.fill([x, y, w, 12.0], 0xFF2A_2A2A);
-            g.fill([x + 1.0, y + 1.0, ((w - 2.0) * frac.clamp(0.0, 1.0)).floor(), 10.0], 0xFF00_0000 | color);
-            g.text(&look.map(text), [x + 3.0, y + 2.0], 0xFFFF_FFFF, look.shadow);
+            g.fill(
+                [
+                    x + 1.0,
+                    y + 1.0,
+                    ((w - 2.0) * frac.clamp(0.0, 1.0)).floor(),
+                    10.0,
+                ],
+                0xFF00_0000 | color,
+            );
+            g.text(
+                &look.map(text),
+                [x + 3.0, y + 2.0],
+                0xFFFF_FFFF,
+                look.shadow,
+            );
         }
         El::Fluid(fluid) => {
             if !fluid.is_empty() && h.fluid_key(fluid).is_some() {
@@ -1341,22 +2098,30 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
             let fill_w = ((w - 2.0) * frac.clamp(0.0, 1.0)).floor();
             if fill_w > 0.0 && !fluid.is_empty() {
                 if h.fluid_key(fluid).is_some() {
-                    if g.clip([x + 1.0, y + 1.0, fill_w, 10.0]) {
+                    g.clipped([x + 1.0, y + 1.0, fill_w, 10.0], |g| {
                         let mut tx = 0.0;
                         while tx < fill_w {
                             g.fluid(fluid, [x + 1.0 + tx, y + 1.0], 10.0);
                             tx += 10.0;
                         }
-                        g.unclip();
-                    }
+                    });
                 } else if fluid == "minecraft:powder_snow" {
                     g.fill([x + 1.0, y + 1.0, fill_w, 10.0], 0xFFF0_F0F0);
                 }
             }
-            g.text(&look.map(text), [x + 3.0, y + 2.0], 0xFFFF_FFFF, look.shadow);
+            g.text(
+                &look.map(text),
+                [x + 3.0, y + 2.0],
+                0xFFFF_FFFF,
+                look.shadow,
+            );
         }
         // HealthElement: hearts in rows (or "health/max" past Max Health for Render).
-        El::Hearts { health, max, absorb } => {
+        El::Hearts {
+            health,
+            max,
+            absorb,
+        } => {
             let icons = ((max.ceil() + absorb.ceil()) / 2.0).ceil().max(1.0) as i32;
             let line = num(h, "health_per_line").max(1.0) as i32;
             if icons * 2 > num(h, "health_max") as i32 || on(h, "health_fractions") {
@@ -1375,8 +2140,16 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
                 let py = y + 4.0 * (rows - 1 - row) as f32;
                 hud_sprite(g, theme, "hud/heart/container", [px, py, 9.0, 9.0]);
                 let absorbing = i > (max * 0.5).ceil() as i32;
-                let (full, half) = if absorbing { ("hud/heart/absorbing_full", "hud/heart/absorbing_half") } else { ("hud/heart/full", "hud/heart/half") };
-                let cur = if absorbing { (max.ceil() + absorb) * 0.5 } else { hearts };
+                let (full, half) = if absorbing {
+                    ("hud/heart/absorbing_full", "hud/heart/absorbing_half")
+                } else {
+                    ("hud/heart/full", "hud/heart/half")
+                };
+                let cur = if absorbing {
+                    (max.ceil() + absorb) * 0.5
+                } else {
+                    hearts
+                };
                 if (i as f32) <= cur.floor() {
                     hud_sprite(g, theme, full, [px, py, 9.0, 9.0]);
                 } else if (i as f32) < cur + 1.0 {
@@ -1389,7 +2162,12 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
         El::Armor(a) => {
             if *a > num(h, "armor_max") as f32 {
                 hud_sprite(g, theme, "hud/armor_full", [x, y, 9.0, 9.0]);
-                g.text(&format!("§f{a:.0}"), [x + 10.0, y + 1.0], 0xFFFF_FFFF, look.shadow);
+                g.text(
+                    &format!("§f{a:.0}"),
+                    [x + 10.0, y + 1.0],
+                    0xFFFF_FFFF,
+                    look.shadow,
+                );
                 return;
             }
             let half = a * 0.5;
@@ -1397,7 +2175,11 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
             for i in 1..=icons {
                 let px = x + 8.0 * ((i - 1) % 10) as f32;
                 let py = y + 4.0 * ((i - 1) / 10) as f32;
-                let name = if (i as f32) <= half.floor() { "hud/armor_full" } else { "hud/armor_half" };
+                let name = if (i as f32) <= half.floor() {
+                    "hud/armor_full"
+                } else {
+                    "hud/armor_half"
+                };
                 hud_sprite(g, theme, name, [px, py, 9.0, 9.0]);
             }
         }
@@ -1407,14 +2189,34 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
             g.text_scaled(&look.map(t), [mx, my], 0.75, look.base, look.shadow);
         }
         El::Energy => {
-            g.sprite(&theme.sprite("jade:energy"), [0.0, 0.0, 16.0, 16.0], [x, y, 9.0, 9.0], 0xFFFF_FFFF);
+            g.sprite(
+                &theme.sprite("jade:energy"),
+                [0.0, 0.0, 16.0, 16.0],
+                [x, y, 9.0, 9.0],
+                0xFFFF_FFFF,
+            );
         }
-        El::Space(_) | El::Icon(_) | El::StackIcon { .. } | El::Badge | El::Title(_) | El::Stats { .. } | El::SpecialId(_) => {}
+        El::Space(_)
+        | El::Icon(_)
+        | El::StackIcon { .. }
+        | El::Badge
+        | El::Title(_)
+        | El::Stats { .. }
+        | El::SpecialId(_) => {}
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_item_el(g: &mut Gfx<'_>, id: &str, components: Option<&Compound>, count: u32, small: bool, x: f32, y: f32, look: &theme::TextLook) {
+fn draw_item_el(
+    g: &mut Gfx<'_>,
+    id: &str,
+    components: Option<&Compound>,
+    count: u32,
+    small: bool,
+    x: f32,
+    y: f32,
+    look: &theme::TextLook,
+) {
     if id == "minecraft:air" {
         return;
     }
@@ -1423,7 +2225,11 @@ fn draw_item_el(g: &mut Gfx<'_>, id: &str, components: Option<&Compound>, count:
     } else {
         g.item_with(id, components, [x + 1.0, y + 1.0], 16.0);
         if count > 1 {
-            let s = if count >= 10_000 { format!("{}k", count / 1000) } else { count.to_string() };
+            let s = if count >= 10_000 {
+                format!("{}k", count / 1000)
+            } else {
+                count.to_string()
+            };
             let w = gfx::width(g.h, &s);
             g.text(&s, [x + 18.0 - w, y + 10.0], look.amount, look.shadow);
         }
@@ -1450,7 +2256,14 @@ pub(crate) struct Placed {
 }
 
 /// `BoxElementImpl.updateExpectedRect`.
-fn place(h: &dyn ClientHost, [sw, sh]: [f32; 2], b: &BuiltBox, [pad_up, pad_down, pad_left, pad_right]: [f32; 4], adjusting: bool, theme: &theme::Theme) -> Placed {
+fn place(
+    h: &dyn ClientHost,
+    [sw, sh]: [f32; 2],
+    b: &BuiltBox,
+    [pad_up, pad_down, pad_left, pad_right]: [f32; 4],
+    adjusting: bool,
+    theme: &theme::Theme,
+) -> Placed {
     let line_size = |l: &Line| -> (f32, f32) {
         let mut w = 0.0f32;
         let mut lh = 0.0f32;
@@ -1465,12 +2278,28 @@ fn place(h: &dyn ClientHost, [sw, sh]: [f32; 2], b: &BuiltBox, [pad_up, pad_down
     let icon_pos = opt(h, "display_item");
     let has_icon = b.icon.is_some() && icon_pos != "hide";
     let inline = icon_pos == "inline";
-    let slot = theme.icon_slot().filter(|_| has_icon && !inline).map_or([0.0; 4], |s| s.padding);
-    let icon_w = if !has_icon || inline { 0.0 } else { 20.0 + slot[1] + slot[3] };
+    let slot = theme
+        .icon_slot()
+        .filter(|_| has_icon && !inline)
+        .map_or([0.0; 4], |s| s.padding);
+    let icon_w = if !has_icon || inline {
+        0.0
+    } else {
+        20.0 + slot[1] + slot[3]
+    };
     let title_extra = if inline && has_icon { 11.0 } else { 0.0 };
-    let w = sizes.iter().enumerate().map(|(i, s)| s.0 + if i == 0 { title_extra } else { 0.0 }).fold(0.0, f32::max) + icon_w;
+    let w = sizes
+        .iter()
+        .enumerate()
+        .map(|(i, s)| s.0 + if i == 0 { title_extra } else { 0.0 })
+        .fold(0.0, f32::max)
+        + icon_w;
     let content_h = sizes.iter().map(|s| s.1 + 1.0).sum::<f32>() - 1.0;
-    let content_h = if has_icon && !inline && slot != [0.0; 4] { content_h.max(16.0 + slot[0] + slot[2]) } else { content_h };
+    let content_h = if has_icon && !inline && slot != [0.0; 4] {
+        content_h.max(16.0 + slot[0] + slot[2])
+    } else {
+        content_h
+    };
     let scale = num(h, "scale") as f32;
     let scale = if scale > 0.0 { scale } else { 1.0 };
     let (bw, bh) = (w + pad_left + pad_right, content_h + pad_up + pad_down);
@@ -1502,7 +2331,11 @@ fn place(h: &dyn ClientHost, [sw, sh]: [f32; 2], b: &BuiltBox, [pad_up, pad_down
             let mut top = (sh * (1.0 - py) - bh * scale * ay).floor();
             let left = x - pad_left;
             let bar_bottom = 19.0 * bars as f32;
-            if push && top < bar_bottom && left < sw / 2.0 + 91.0 && left + bw * scale > sw / 2.0 - 91.0 {
+            if push
+                && top < bar_bottom
+                && left < sw / 2.0 + 91.0
+                && left + bw * scale > sw / 2.0 - 91.0
+            {
                 top = bar_bottom;
             }
             (top + pad_up, top)
@@ -1521,8 +2354,24 @@ fn place(h: &dyn ClientHost, [sw, sh]: [f32; 2], b: &BuiltBox, [pad_up, pad_down
         }
     };
     let (left, top) = (x - pad_left, y - pad_up);
-    let rect = [pivot_x + (left - pivot_x) * scale, pivot_y + (top - pivot_y) * scale, bw * scale, bh * scale];
-    Placed { x, y, h: content_h, icon_w, title_extra, sizes, frame: [left, top, bw, bh], pivot: [pivot_x, pivot_y], scale, rect }
+    let rect = [
+        pivot_x + (left - pivot_x) * scale,
+        pivot_y + (top - pivot_y) * scale,
+        bw * scale,
+        bh * scale,
+    ];
+    Placed {
+        x,
+        y,
+        h: content_h,
+        icon_w,
+        title_extra,
+        sizes,
+        frame: [left, top, bw, bh],
+        pivot: [pivot_x, pivot_y],
+        scale,
+        rect,
+    }
 }
 
 /// `TooltipAnimation.expectedRect` for a box.
@@ -1532,7 +2381,13 @@ pub fn box_rect(h: &dyn ClientHost, size: [f32; 2], b: &BuiltBox, adjusting: boo
 }
 
 /// The box: the theme's frame round the icon column and the lines. Its rectangle on the screen.
-pub fn draw_box(d: &mut dyn DrawContext, h: &dyn ClientHost, b: &BuiltBox, adjusting: bool, fade_in: bool) -> [f32; 4] {
+pub fn draw_box(
+    d: &mut dyn DrawContext,
+    h: &dyn ClientHost,
+    b: &BuiltBox,
+    adjusting: bool,
+    fade_in: bool,
+) -> [f32; 4] {
     let theme = theme::current(h);
     let look = theme.text_look();
     let screen = d.size();
@@ -1545,7 +2400,9 @@ pub fn draw_box(d: &mut dyn DrawContext, h: &dyn ClientHost, b: &BuiltBox, adjus
     let alpha_fade = if fade_in && on(h, "animation") {
         with(|c| {
             let now = Instant::now();
-            let dt = c.fade_at.map_or(0.0, |t| now.duration_since(t).as_secs_f32());
+            let dt = c
+                .fade_at
+                .map_or(0.0, |t| now.duration_since(t).as_secs_f32());
             c.fade_at = Some(now);
             c.fade = (c.fade + dt / 0.1).min(1.0);
             c.fade
@@ -1563,11 +2420,19 @@ pub fn draw_box(d: &mut dyn DrawContext, h: &dyn ClientHost, b: &BuiltBox, adjus
         let (at, isize) = if inline {
             ([x, y], 9.0)
         } else {
-            let iy = if icon_pos == "centered" { y + ((ch - 16.0) / 2.0).max(0.0).floor() } else { y + ((ch - 16.0) / 2.0).clamp(0.0, 2.0) };
+            let iy = if icon_pos == "centered" {
+                y + ((ch - 16.0) / 2.0).max(0.0).floor()
+            } else {
+                y + ((ch - 16.0) / 2.0).clamp(0.0, 2.0)
+            };
             match theme.icon_slot() {
                 Some(slot) => {
                     let [top, _, bottom, left] = slot.padding;
-                    let iy = if icon_pos == "centered" { y + ((ch - 16.0 - top - bottom) / 2.0).max(0.0).floor() + top } else { y + top };
+                    let iy = if icon_pos == "centered" {
+                        y + ((ch - 16.0 - top - bottom) / 2.0).max(0.0).floor() + top
+                    } else {
+                        y + top
+                    };
                     let at = [x + left, iy];
                     slot.draw(&mut g, at, 16.0, alpha);
                     (at, 16.0)
@@ -1578,7 +2443,11 @@ pub fn draw_box(d: &mut dyn DrawContext, h: &dyn ClientHost, b: &BuiltBox, adjus
         g.item_with(icon, b.icon_components.as_ref(), at, isize);
         // WaxedProvider.BlockComponent.waxedIcon: a honeycomb at half size on top.
         if b.badge {
-            g.item("minecraft:honeycomb", [at[0] + isize / 2.0, at[1] + isize / 2.0], isize / 2.0);
+            g.item(
+                "minecraft:honeycomb",
+                [at[0] + isize / 2.0, at[1] + isize / 2.0],
+                isize / 2.0,
+            );
         }
     }
     let text_alpha = num(h, "text_background_opacity");
@@ -1596,7 +2465,14 @@ pub fn draw_box(d: &mut dyn DrawContext, h: &dyn ClientHost, b: &BuiltBox, adjus
         ly += lh + 1.0;
     }
     if let Some((progress, failed, progress_alpha)) = b.mining {
-        theme::draw_progress(&mut g, &theme, p.frame, progress, failed, progress_alpha * alpha);
+        theme::draw_progress(
+            &mut g,
+            &theme,
+            p.frame,
+            progress,
+            failed,
+            progress_alpha * alpha,
+        );
     }
     if b.sneaky {
         let ticks = STARTED.with(|t| t.elapsed().as_secs_f32()) * 20.0;
@@ -1618,7 +2494,12 @@ pub fn draw_layer(h: &dyn ClientHost, d: &mut dyn DrawContext) {
     // Hide from GUIs (a config screen with the preview shows it over itself), the player list, Show Overlay off.
     let screen_hides = !previewing && !h.playing() && on(h, "hide_from_guis");
     let list_hides = on(h, "hide_from_tab_list") && crate::keys::player_list_down(h);
-    if !h.on(opts::ID) || h.local_player().is_none() || screen_hides || list_hides || with(|c| c.hidden) {
+    if !h.on(opts::ID)
+        || h.local_player().is_none()
+        || screen_hides
+        || list_hides
+        || with(|c| c.hidden)
+    {
         with(|c| {
             c.seen = None;
             c.active = false;
@@ -1629,14 +2510,22 @@ pub fn draw_layer(h: &dyn ClientHost, d: &mut dyn DrawContext) {
     if let Some((p, _)) = me(h)
         && let Some(at) = p.entity().position(h)
         && let Some(level) = level(h)
-        && level.block(h, at.map(|v| v.floor() as i32)).is_some_and(|b| b.id(h) == Some("minecraft:powder_snow"))
+        && level
+            .block(h, at.map(|v| v.floor() as i32))
+            .is_some_and(|b| b.id(h) == Some("minecraft:powder_snow"))
     {
         with(|c| c.powder_at = Some(Instant::now()));
     }
     let pinned = with(|c| c.pinned.clone());
     let seen = pinned.or_else(|| look(h));
     if with(|c| std::mem::take(&mut c.pin_requested)) {
-        with(|c| c.pinned = if c.pinned.is_some() { None } else { seen.clone() });
+        with(|c| {
+            c.pinned = if c.pinned.is_some() {
+                None
+            } else {
+                seen.clone()
+            }
+        });
     }
     // The server's pick (a dropped item, a falling block, a display, a mob past the hand's reach) when nearer.
     let seen = match (seen, with(|c| c.entity_data.clone())) {
@@ -1647,8 +2536,20 @@ pub fn draw_layer(h: &dyn ClientHost, d: &mut dyn DrawContext) {
                 None => true,
             };
             if nearer {
-                let point = aim(h).map(|(e, dir)| [e[0] + dir[0] * d.dist, e[1] + dir[1] * d.dist, e[2] + dir[2] * d.dist]).unwrap_or([0.0; 3]);
-                Some(Seen::Entity { id: d.id, point, dist: d.dist })
+                let point = aim(h)
+                    .map(|(e, dir)| {
+                        [
+                            e[0] + dir[0] * d.dist,
+                            e[1] + dir[1] * d.dist,
+                            e[2] + dir[2] * d.dist,
+                        ]
+                    })
+                    .unwrap_or([0.0; 3]);
+                Some(Seen::Entity {
+                    id: d.id,
+                    point,
+                    dist: d.dist,
+                })
             } else {
                 s
             }
@@ -1662,7 +2563,11 @@ pub fn draw_layer(h: &dyn ClientHost, d: &mut dyn DrawContext) {
     // Boss Bar Overlap's Hide Tooltip.
     let bars = with(|c| c.bars);
     let at_top = opt(h, "position");
-    if bars > 0 && opt(h, "boss_bar_overlap") == "hide_tip" && !previewing && (at_top == "0" || at_top.starts_with("custom:")) {
+    if bars > 0
+        && opt(h, "boss_bar_overlap") == "hide_tip"
+        && !previewing
+        && (at_top == "0" || at_top.starts_with("custom:"))
+    {
         return;
     }
     let Some(seen) = seen else {
@@ -1706,7 +2611,9 @@ pub fn item_tooltip(h: &dyn ClientHost, e: &mut ItemTooltipEvent<'_>) {
     let mut style = mod_api::text::TextStyle::default();
     style.color = Some("blue".to_owned());
     style.italic = Some(true);
-    let _ = e.lines.push(Text::literal(mod_name(h, ns)).with_style(style), u32::MAX);
+    let _ = e
+        .lines
+        .push(Text::literal(mod_name(h, ns)).with_style(style), u32::MAX);
 }
 
 /// The plain text of a box, line by line (what Narrate Target would say).

@@ -26,14 +26,35 @@ pub struct Palette {
 
 impl Palette {
     /// ColorPalette.DEFAULT.
-    pub const DEFAULT: Palette = Palette { normal: 0xFFA0_A0A0, info: 0xFFFF_FFFF, title: 0xFFFF_FFFF, success: 0xFF55_FF55, warning: 0xFFFF_C107, danger: 0xFFFF_5555, failure: 0xFFAA_0000 };
+    pub const DEFAULT: Palette = Palette {
+        normal: 0xFFA0_A0A0,
+        info: 0xFFFF_FFFF,
+        title: 0xFFFF_FFFF,
+        success: 0xFF55_FF55,
+        warning: 0xFFFF_C107,
+        danger: 0xFFFF_5555,
+        failure: 0xFFAA_0000,
+    };
 
     fn parse(v: JsonRef<'_>) -> Palette {
         let v = v.0;
         let d = Palette::DEFAULT;
         let Some(v) = v else { return d };
-        let c = |name: &str, or: u32| v.get(name).and_then(|x| x.as_str()).and_then(color).unwrap_or(or);
-        Palette { normal: c("normal", d.normal), info: c("info", d.info), title: c("title", d.title), success: c("success", d.success), warning: c("warning", d.warning), danger: c("danger", d.danger), failure: c("failure", d.failure) }
+        let c = |name: &str, or: u32| {
+            v.get(name)
+                .and_then(|x| x.as_str())
+                .and_then(color)
+                .unwrap_or(or)
+        };
+        Palette {
+            normal: c("normal", d.normal),
+            info: c("info", d.info),
+            title: c("title", d.title),
+            success: c("success", d.success),
+            warning: c("warning", d.warning),
+            danger: c("danger", d.danger),
+            failure: c("failure", d.failure),
+        }
     }
 }
 
@@ -41,7 +62,11 @@ impl Palette {
 fn color_parts(s: &str) -> Option<Vec<String>> {
     let s = s.replace('/', " ");
     let inner = s.get(s.find('(')? + 1..s.find(')')?)?;
-    let parts: Vec<&str> = if inner.contains(',') { inner.split(',').collect() } else { inner.split_whitespace().collect() };
+    let parts: Vec<&str> = if inner.contains(',') {
+        inner.split(',').collect()
+    } else {
+        inner.split_whitespace().collect()
+    };
     Some(parts.into_iter().map(|p| p.trim().to_owned()).collect())
 }
 
@@ -85,7 +110,10 @@ fn hsl_color(hue: f64, saturation: f64, lightness: f64, opacity: f64) -> u32 {
     };
     let m = lightness - c / 2.0;
     let channel = |v: f64| (((v + m) * 255.0) as i32).clamp(0, 255) as u32;
-    (((opacity.clamp(0.0, 1.0) * 255.0) as u32) << 24) | (channel(r) << 16) | (channel(g) << 8) | channel(b)
+    (((opacity.clamp(0.0, 1.0) * 255.0) as u32) << 24)
+        | (channel(r) << 16)
+        | (channel(g) << 8)
+        | channel(b)
 }
 
 /// `Color.valueOf`, as ARGB: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` (the `#` optional), `rgb(r, g, b[, a])`,
@@ -97,9 +125,18 @@ fn color(s: &str) -> Option<u32> {
     }
     if s.contains("rgb") {
         let parts = color_parts(&s)?;
-        let channel = |p: &String| -> Option<u32> { Some(color_number(p, 255.0)?.round().clamp(0.0, 255.0) as u32) };
-        let (r, g, b) = (channel(parts.first()?)?, channel(parts.get(1)?)?, channel(parts.get(2)?)?);
-        let a = parts.get(3).and_then(|p| color_number(p, 1.0)).map_or(255, |a| (a.clamp(0.0, 1.0) * 255.0) as u32);
+        let channel = |p: &String| -> Option<u32> {
+            Some(color_number(p, 255.0)?.round().clamp(0.0, 255.0) as u32)
+        };
+        let (r, g, b) = (
+            channel(parts.first()?)?,
+            channel(parts.get(1)?)?,
+            channel(parts.get(2)?)?,
+        );
+        let a = parts
+            .get(3)
+            .and_then(|p| color_number(p, 1.0))
+            .map_or(255, |a| (a.clamp(0.0, 1.0) * 255.0) as u32);
         return Some((a << 24) | (r << 16) | (g << 8) | b);
     }
     if s.contains("hsl") {
@@ -107,16 +144,27 @@ fn color(s: &str) -> Option<u32> {
         let hue = color_degrees(parts.first()?)?;
         let saturation = color_number(parts.get(1)?, 1.0)?;
         let lightness = color_number(parts.get(2)?, 1.0)?;
-        let opacity = parts.get(3).and_then(|p| color_number(p, 1.0)).unwrap_or(1.0);
+        let opacity = parts
+            .get(3)
+            .and_then(|p| color_number(p, 1.0))
+            .unwrap_or(1.0);
         return Some(hsl_color(hue, saturation, lightness, opacity));
     }
     let hex = s.strip_prefix('#').unwrap_or(&s);
-    let full: String = if hex.len() == 3 || hex.len() == 4 { hex.chars().flat_map(|c| [c, c]).collect() } else { hex.to_owned() };
+    let full: String = if hex.len() == 3 || hex.len() == 4 {
+        hex.chars().flat_map(|c| [c, c]).collect()
+    } else {
+        hex.to_owned()
+    };
     if full.len() != 6 && full.len() != 8 {
         return None;
     }
     let v = u32::from_str_radix(&full, 16).ok()?;
-    Some(if full.len() == 6 { 0xFF00_0000 | v } else { v.rotate_right(8) })
+    Some(if full.len() == 6 {
+        0xFF00_0000 | v
+    } else {
+        v.rotate_right(8)
+    })
 }
 
 /// A chat style's parts, as much of it as the overlay's text can show.
@@ -133,7 +181,9 @@ pub(crate) struct StylePart {
 /// `Style.Serializer`'s fields.
 fn style_part(v: JsonRef<'_>) -> StylePart {
     let v = v.0;
-    let Some(v) = v else { return StylePart::default() };
+    let Some(v) = v else {
+        return StylePart::default();
+    };
     let flag = |k: &str| v.get(k).and_then(|x| x.as_bool());
     let named = |n: &str| -> Option<u32> {
         Some(match n {
@@ -207,14 +257,32 @@ impl Sneaky {
     /// `SneakyDetails.CODEC`; `SneakyDetails.DEFAULT` without one (or for a type Java refuses too).
     fn parse(v: JsonRef<'_>) -> Sneaky {
         let v = v.0;
-        let default = Sneaky { sprite: "jade:details_arrow".to_owned(), width: 7.0, height: 5.0, offset: [0.0; 2], breath: true, distance: 1.0, period: 12.0 };
-        let Some(v) = v.filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("simple")) else { return default };
-        let (Some(sprite), Some(width), Some(height)) = (v.get("sprite").and_then(|x| x.as_str()), v.get("width").and_then(|x| x.as_f64()), v.get("height").and_then(|x| x.as_f64())) else {
+        let default = Sneaky {
+            sprite: "jade:details_arrow".to_owned(),
+            width: 7.0,
+            height: 5.0,
+            offset: [0.0; 2],
+            breath: true,
+            distance: 1.0,
+            period: 12.0,
+        };
+        let Some(v) = v.filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("simple")) else {
+            return default;
+        };
+        let (Some(sprite), Some(width), Some(height)) = (
+            v.get("sprite").and_then(|x| x.as_str()),
+            v.get("width").and_then(|x| x.as_f64()),
+            v.get("height").and_then(|x| x.as_f64()),
+        ) else {
             return default;
         };
         let float = |k: &str, or: f64| v.get(k).and_then(|x| x.as_f64()).unwrap_or(or) as f32;
         Sneaky {
-            sprite: if sprite.contains(':') { sprite.to_owned() } else { format!("minecraft:{sprite}") },
+            sprite: if sprite.contains(':') {
+                sprite.to_owned()
+            } else {
+                format!("minecraft:{sprite}")
+            },
             width: width as f32,
             height: height as f32,
             offset: [float("offsetX", 0.0), float("offsetY", 0.0)],
@@ -242,7 +310,6 @@ const DETAILS_ARROW: [(u8, u8, u8, u32); 13] = [
     (4, 3, 4, 0xFF66_6666),
 ];
 
-
 /// A sprite a theme names, by its id (`jade:dark`) and as the GUI atlas names it.
 #[derive(Clone)]
 pub(crate) struct Sprite {
@@ -252,7 +319,10 @@ pub(crate) struct Sprite {
 
 impl Sprite {
     fn new(id: &str) -> Sprite {
-        Sprite { id: id.to_owned(), atlas: atlas_name(id) }
+        Sprite {
+            id: id.to_owned(),
+            atlas: atlas_name(id),
+        }
     }
 }
 
@@ -271,23 +341,34 @@ pub(crate) struct BoxStyle {
 
 impl BoxStyle {
     fn parse(v: JsonRef<'_>) -> BoxStyle {
-        let Some(v) = v.0 else { return BoxStyle::parse(JsonRef(Some(&Value::Null))) };
+        let Some(v) = v.0 else {
+            return BoxStyle::parse(JsonRef(Some(&Value::Null)));
+        };
         let tooltip = v.get("tooltip").and_then(|x| x.as_bool()).unwrap_or(false);
         let sprites = |key: &str| -> Option<(Sprite, Option<Sprite>)> {
             let id = v.get(key)?.as_str()?;
-            let id = if id.contains(':') { id.to_owned() } else { format!("minecraft:{id}") };
+            let id = if id.contains(':') {
+                id.to_owned()
+            } else {
+                format!("minecraft:{id}")
+            };
             if tooltip {
                 // TooltipRenderUtil.getBackgroundSprite and getFrameSprite.
                 let (ns, path) = id.split_once(':')?;
                 let mut back = Sprite::new(&format!("{ns}:tooltip/{path}_background"));
                 back.id = id.clone();
-                Some((back, Some(Sprite::new(&format!("{ns}:tooltip/{path}_frame")))))
+                Some((
+                    back,
+                    Some(Sprite::new(&format!("{ns}:tooltip/{path}_frame"))),
+                ))
             } else {
                 Some((Sprite::new(&id), None))
             }
         };
         let floats = |key: &str, or: [f32; 4]| -> [f32; 4] {
-            let Some(a) = v.get(key).and_then(|x| x.as_array()) else { return or };
+            let Some(a) = v.get(key).and_then(|x| x.as_array()) else {
+                return or;
+            };
             let mut out = or;
             for (slot, x) in out.iter_mut().zip(a) {
                 *slot = x.as_f64().unwrap_or(0.0) as f32;
@@ -363,7 +444,16 @@ impl IconSlot<'_> {
     /// Draws the slot round an icon of `size` at `at`.
     pub fn draw(&self, g: &mut Gfx<'_>, at: [f32; 2], size: f32, alpha: f32) {
         let [top, right, bottom, left] = self.padding;
-        g.nine(&self.sprite.atlas, [at[0] - left, at[1] - top, size + left + right, size + top + bottom], fade(0xFFFF_FFFF, alpha));
+        g.nine(
+            &self.sprite.atlas,
+            [
+                at[0] - left,
+                at[1] - top,
+                size + left + right,
+                size + top + bottom,
+            ],
+            fade(0xFFFF_FFFF, alpha),
+        );
     }
 }
 
@@ -419,31 +509,77 @@ impl Theme {
             id: id.to_owned(),
             main,
             style,
-            style_name: v.get("styleName").and_then(|x| x.as_str()).unwrap_or("jade.default").to_owned(),
+            style_name: v
+                .get("styleName")
+                .and_then(|x| x.as_str())
+                .unwrap_or("jade.default")
+                .to_owned(),
             tooltip_style: BoxStyle::parse(JsonRef(Some(v.get("tooltipStyle")?))),
             colors,
-            shadow: text_setting.and_then(|t| t.get("shadow")).and_then(|x| x.as_bool()).unwrap_or(true),
-            title_code: if title == 0xFF_FFFF { "§f".to_owned() } else { format!("§#{title:06X}") },
-            mod_code: mod_name_code(style_part(JsonRef(text_setting.and_then(|t| t.get("modNameStyle"))))),
-            amount: text_setting.and_then(|t| t.get("itemAmountColor")).and_then(|x| x.as_str()).and_then(color).unwrap_or(0xFFFF_FFFF),
-            change_opacity: v.get("changeOpacity").and_then(|x| x.as_f64()).unwrap_or(0.0).clamp(0.0, 1.0) as f32,
-            auto_enable: v.get("autoEnable").and_then(|x| x.as_bool()).unwrap_or(false),
+            shadow: text_setting
+                .and_then(|t| t.get("shadow"))
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            title_code: if title == 0xFF_FFFF {
+                "§f".to_owned()
+            } else {
+                format!("§#{title:06X}")
+            },
+            mod_code: mod_name_code(style_part(JsonRef(
+                text_setting.and_then(|t| t.get("modNameStyle")),
+            ))),
+            amount: text_setting
+                .and_then(|t| t.get("itemAmountColor"))
+                .and_then(|x| x.as_str())
+                .and_then(color)
+                .unwrap_or(0xFFFF_FFFF),
+            change_opacity: v
+                .get("changeOpacity")
+                .and_then(|x| x.as_f64())
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0) as f32,
+            auto_enable: v
+                .get("autoEnable")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
             sneaky: Sneaky::parse(JsonRef(v.get("sneakyDetails"))),
-            icon_slot: v.get("iconSlotSprite").and_then(|x| x.as_str()).map(|s| Sprite::new(&if s.contains(':') { s.to_owned() } else { format!("minecraft:{s}") })),
-            icon_slot_inflation: v.get("iconSlotInflation").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+            icon_slot: v.get("iconSlotSprite").and_then(|x| x.as_str()).map(|s| {
+                Sprite::new(&if s.contains(':') {
+                    s.to_owned()
+                } else {
+                    format!("minecraft:{s}")
+                })
+            }),
+            icon_slot_inflation: v
+                .get("iconSlotInflation")
+                .and_then(|x| x.as_f64())
+                .unwrap_or(0.0) as f32,
             sprite_mapping: v
                 .get("spriteMapping")
                 .and_then(|x| x.as_object())
                 .map(|map| {
-                    let full = |s: &str| if s.contains(':') { s.to_owned() } else { format!("minecraft:{s}") };
-                    map.iter().filter_map(|(from, to)| Some((full(from), full(to.as_str()?)))).collect()
+                    let full = |s: &str| {
+                        if s.contains(':') {
+                            s.to_owned()
+                        } else {
+                            format!("minecraft:{s}")
+                        }
+                    };
+                    map.iter()
+                        .filter_map(|(from, to)| Some((full(from), full(to.as_str()?))))
+                        .collect()
                 })
                 .unwrap_or_default(),
         })
     }
 
     pub fn text_look(&self) -> TextLook {
-        TextLook { base: self.colors.normal, shadow: self.shadow, amount: self.amount, palette: self.colors }
+        TextLook {
+            base: self.colors.normal,
+            shadow: self.shadow,
+            amount: self.amount,
+            palette: self.colors,
+        }
     }
 
     /// BoxStyle's padding: up, down, left, right.
@@ -463,7 +599,10 @@ impl Theme {
     pub fn icon_slot(&self) -> Option<IconSlot<'_>> {
         let sprite = self.icon_slot.as_ref()?;
         let i = self.icon_slot_inflation;
-        Some(IconSlot { sprite, padding: [i; 4] })
+        Some(IconSlot {
+            sprite,
+            padding: [i; 4],
+        })
     }
 
     /// `SneakyDetails.Simple.render`: the arrow at the foot of the box. Nothing for the part of its period it is away.
@@ -485,7 +624,13 @@ impl Theme {
         }
         let alpha = (alpha * opacity).clamp(0.0, 1.0);
         let name = self.sprite(&s.sprite);
-        if !g.sprite(&name, [0.0, 0.0, s.width, s.height], [x, y, s.width, s.height], fade(0xFFFF_FFFF, alpha)) && s.sprite == "jade:details_arrow" {
+        if !g.sprite(
+            &name,
+            [0.0, 0.0, s.width, s.height],
+            [x, y, s.width, s.height],
+            fade(0xFFFF_FFFF, alpha),
+        ) && s.sprite == "jade:details_arrow"
+        {
             for (row, from, to, argb) in DETAILS_ARROW {
                 let (from, to, row) = (f32::from(from), f32::from(to), f32::from(row));
                 g.fill([x + from, y + row, to - from, 1.0], fade(argb, alpha));
@@ -517,7 +662,13 @@ fn builtin_look(id: &str) -> Option<Look> {
         "jade:top" => (0x8000_6699, 0xFF99_99AD, 0xFF99_99AD, 2.0, false),
         _ => return None,
     };
-    Some(Look { fill, top, bottom, border, ring })
+    Some(Look {
+        fill,
+        top,
+        bottom,
+        border,
+        ring,
+    })
 }
 
 fn draw_look(g: &mut Gfx<'_>, look: &Look, [x, y, w, h]: [f32; 4], alpha: f32) {
@@ -547,14 +698,22 @@ pub fn draw_background(g: &mut Gfx<'_>, theme: &Theme, rect: [f32; 4], has_icon:
         return;
     }
     let style = &theme.tooltip_style;
-    let chosen = if has_icon { style.with_icon.as_ref().or(style.plain.as_ref()) } else { style.plain.as_ref() };
+    let chosen = if has_icon {
+        style.with_icon.as_ref().or(style.plain.as_ref())
+    } else {
+        style.plain.as_ref()
+    };
     let Some((back, frame)) = chosen else { return };
     let [x, y, w, h] = rect.map(f32::round);
     if let Some(look) = builtin_look(&back.id) {
         draw_look(g, &look, [x, y, w, h], alpha.min(1.0));
         return;
     }
-    let outer = if style.tooltip { [x - 9.0, y - 9.0, w + 18.0, h + 18.0] } else { [x, y, w, h] };
+    let outer = if style.tooltip {
+        [x - 9.0, y - 9.0, w + 18.0, h + 18.0]
+    } else {
+        [x, y, w, h]
+    };
     let white = fade(0xFFFF_FFFF, alpha.min(1.0));
     g.nine(&back.atlas, outer, white);
     if let Some(frame) = frame {
@@ -563,13 +722,27 @@ pub fn draw_background(g: &mut Gfx<'_>, theme: &Theme, rect: [f32; 4], has_icon:
 }
 
 /// `BoxElementImpl.drawBoxProgressBar`: along the box's foot, in the style's colour for TITLE or FAILURE.
-pub fn draw_progress(g: &mut Gfx<'_>, theme: &Theme, [x, y, w, h]: [f32; 4], progress: f32, failed: bool, alpha: f32) {
+pub fn draw_progress(
+    g: &mut Gfx<'_>,
+    theme: &Theme,
+    [x, y, w, h]: [f32; 4],
+    progress: f32,
+    failed: bool,
+    alpha: f32,
+) {
     let style = &theme.tooltip_style;
-    let base = if failed { style.progress.failure } else { style.progress.title };
+    let base = if failed {
+        style.progress.failure
+    } else {
+        style.progress.title
+    };
     let [up, down, left, right] = style.progress_offset;
     let bottom = y + h;
     let width = (w + right - left) * progress.clamp(0.0, 1.0);
-    g.fill([x + left, bottom - 1.0 + up, width, 1.0 + down - up], fade(base, alpha.clamp(0.0, 1.0)));
+    g.fill(
+        [x + left, bottom - 1.0 + up, width, 1.0 + down - up],
+        fade(base, alpha.clamp(0.0, 1.0)),
+    );
 }
 
 /// The themes, sorted as Java's `TreeMap<Identifier, Theme>` is (by path, then namespace): the jar's (this mod's
@@ -582,7 +755,12 @@ fn loaded() -> Vec<Arc<Theme>> {
     if l.is_empty() {
         drop(l);
         // Before the first reload: Jade's own, as the jar has them.
-        return sorted(JAR_THEMES.iter().filter_map(|(id, text)| Theme::parse(id, text.as_bytes()).map(Arc::new)).collect());
+        return sorted(
+            JAR_THEMES
+                .iter()
+                .filter_map(|(id, text)| Theme::parse(id, text.as_bytes()).map(Arc::new))
+                .collect(),
+        );
     }
     l.clone()
 }
@@ -597,13 +775,34 @@ fn sorted(mut themes: Vec<Arc<Theme>>) -> Vec<Arc<Theme>> {
 
 /// assets/jade/jade_themes/ of Jade-mc26.3-Fabric-26.3.5.jar, for the moment before the resources load.
 const JAR_THEMES: [(&str, &str); 7] = [
-    ("jade:create", r#"{"version":200,"tooltipStyle":{"sprite":"jade:create","tooltip":true}}"#),
-    ("jade:dark", r#"{"version":200,"tooltipStyle":{"sprite":"jade:dark","tooltip":true}}"#),
-    ("jade:top", r#"{"version":200,"tooltipStyle":{"sprite":"jade:top","borderWidth":2,"padding":[5,4,5,4]}}"#),
-    ("jade:waila", r#"{"version":200,"tooltipStyle":{"sprite":"jade:waila","tooltip":true}}"#),
-    ("jade:create/slim", r#"{"version":200,"styleName":"jade.slim","tooltipStyle":{"sprite":"jade:create_slim"}}"#),
-    ("jade:dark/slim", r#"{"version":200,"styleName":"jade.slim","tooltipStyle":{"sprite":"jade:dark_slim"}}"#),
-    ("jade:waila/slim", r#"{"version":200,"styleName":"jade.slim","tooltipStyle":{"sprite":"jade:waila_slim"}}"#),
+    (
+        "jade:create",
+        r#"{"version":200,"tooltipStyle":{"sprite":"jade:create","tooltip":true}}"#,
+    ),
+    (
+        "jade:dark",
+        r#"{"version":200,"tooltipStyle":{"sprite":"jade:dark","tooltip":true}}"#,
+    ),
+    (
+        "jade:top",
+        r#"{"version":200,"tooltipStyle":{"sprite":"jade:top","borderWidth":2,"padding":[5,4,5,4]}}"#,
+    ),
+    (
+        "jade:waila",
+        r#"{"version":200,"tooltipStyle":{"sprite":"jade:waila","tooltip":true}}"#,
+    ),
+    (
+        "jade:create/slim",
+        r#"{"version":200,"styleName":"jade.slim","tooltipStyle":{"sprite":"jade:create_slim"}}"#,
+    ),
+    (
+        "jade:dark/slim",
+        r#"{"version":200,"styleName":"jade.slim","tooltipStyle":{"sprite":"jade:dark_slim"}}"#,
+    ),
+    (
+        "jade:waila/slim",
+        r#"{"version":200,"styleName":"jade.slim","tooltipStyle":{"sprite":"jade:waila_slim"}}"#,
+    ),
 ];
 
 const DEFAULT_THEME: &str = "jade:dark";
@@ -612,7 +811,10 @@ const DEFAULT_THEME: &str = "jade:dark";
 pub struct Themes;
 
 impl ClientReloadListener for Themes {
-    fn prepare(&self, context: &ClientReloadContext) -> Result<Box<dyn FnOnce() + Send + 'static>, ReloadResourceError> {
+    fn prepare(
+        &self,
+        context: &ClientReloadContext,
+    ) -> Result<Box<dyn FnOnce() + Send + 'static>, ReloadResourceError> {
         let mut themes = Vec::new();
         for id in context.list() {
             let name = id.to_string();
@@ -631,7 +833,12 @@ impl ClientReloadListener for Themes {
 }
 
 pub fn register(listeners: &mut dyn ClientReloadListeners) {
-    let (Ok(id), Ok(converter)) = (Identifier::parse("jade:themes"), FileToIdConverter::json("jade_themes")) else { return };
+    let (Ok(id), Ok(converter)) = (
+        Identifier::parse("jade:themes"),
+        FileToIdConverter::json("jade_themes"),
+    ) else {
+        return;
+    };
     let _ = listeners.add_listener(id, converter, Arc::new(Themes));
 }
 
@@ -657,11 +864,26 @@ fn check_new(h: &dyn ClientHost) {
     let seen = opts::opt(h, "themes_seen");
     if seen != joined {
         let known: Vec<&str> = seen.split(',').collect();
-        if let Some(new) = themes.iter().find(|t| t.auto_enable && !known.contains(&t.id.as_str())) {
+        if let Some(new) = themes
+            .iter()
+            .find(|t| t.auto_enable && !known.contains(&t.id.as_str()))
+        {
             opts::set(h, "overlay_theme", &stored_main(&new.main));
-            opts::set(h, "theme_style", if new.style.is_empty() { "default" } else { &new.style });
+            opts::set(
+                h,
+                "theme_style",
+                if new.style.is_empty() {
+                    "default"
+                } else {
+                    &new.style
+                },
+            );
             if new.change_opacity != 0.0 {
-                opts::set(h, "overlay_alpha", &format!("{}", (new.change_opacity * 100.0).round() as u32));
+                opts::set(
+                    h,
+                    "overlay_alpha",
+                    &format!("{}", (new.change_opacity * 100.0).round() as u32),
+                );
             }
         }
         opts::set(h, "themes_seen", &joined);
@@ -673,17 +895,37 @@ pub fn current(h: &dyn ClientHost) -> Arc<Theme> {
     check_new(h);
     let epoch = opts::settings_epoch();
     let reloads = RELOADS.load(Ordering::Relaxed);
-    if let Some(t) = ACTIVE.with_borrow(|a| a.as_ref().filter(|(e, r, _)| *e == epoch && *r == reloads).map(|(_, _, t)| t.clone())) {
+    if let Some(t) = ACTIVE.with_borrow(|a| {
+        a.as_ref()
+            .filter(|(e, r, _)| *e == epoch && *r == reloads)
+            .map(|(_, _, t)| t.clone())
+    }) {
         return t;
     }
     let themes = loaded();
     let main = opts::opt(h, "overlay_theme");
-    let main = if main.contains(':') { main } else { format!("jade:{main}") };
+    let main = if main.contains(':') {
+        main
+    } else {
+        format!("jade:{main}")
+    };
     let style = opts::opt(h, "theme_style");
-    let full = if style == "default" || style.is_empty() { main.clone() } else { format!("{main}/{style}") };
+    let full = if style == "default" || style.is_empty() {
+        main.clone()
+    } else {
+        format!("{main}/{style}")
+    };
     let find = |id: &str| themes.iter().find(|t| t.id == id).cloned();
-    let theme = find(&full).or_else(|| find(&main)).or_else(|| find(DEFAULT_THEME)).or_else(|| themes.first().cloned());
-    let theme = theme.unwrap_or_else(|| Arc::new(Theme::parse(DEFAULT_THEME, JAR_THEMES[1].1.as_bytes()).expect("Jade's dark theme parses")));
+    let theme = find(&full)
+        .or_else(|| find(&main))
+        .or_else(|| find(DEFAULT_THEME))
+        .or_else(|| themes.first().cloned());
+    let theme = theme.unwrap_or_else(|| {
+        Arc::new(
+            Theme::parse(DEFAULT_THEME, JAR_THEMES[1].1.as_bytes())
+                .expect("Jade's dark theme parses"),
+        )
+    });
     ACTIVE.with_borrow_mut(|a| *a = Some((epoch, reloads, theme.clone())));
     theme
 }
@@ -693,7 +935,9 @@ fn theme_name(h: &dyn ClientHost, main: &str) -> String {
     let (ns, path) = main.split_once(':').unwrap_or(("jade", main));
     let fallback = {
         let mut c = path.chars();
-        c.next().map_or(String::new(), |f| f.to_uppercase().collect::<String>() + c.as_str())
+        c.next().map_or(String::new(), |f| {
+            f.to_uppercase().collect::<String>() + c.as_str()
+        })
     };
     opts::tr(h, &format!("jade.theme.{ns}.{path}"), &fallback)
 }
@@ -732,11 +976,19 @@ pub fn cycle_main(h: &dyn ClientHost, back: bool) {
     }
     let now = current(h).main.clone();
     let at = mains.iter().position(|t| t.id == now).unwrap_or(0);
-    let next = if back { mains[(at + mains.len() - 1) % mains.len()] } else { mains[(at + 1) % mains.len()] };
+    let next = if back {
+        mains[(at + mains.len() - 1) % mains.len()]
+    } else {
+        mains[(at + 1) % mains.len()]
+    };
     opts::set(h, "overlay_theme", &stored_main(&next.main));
     opts::set(h, "theme_style", "default");
     if next.change_opacity != 0.0 {
-        opts::set(h, "overlay_alpha", &format!("{}", (next.change_opacity * 100.0).round() as u32));
+        opts::set(
+            h,
+            "overlay_alpha",
+            &format!("{}", (next.change_opacity * 100.0).round() as u32),
+        );
     }
 }
 
@@ -749,6 +1001,18 @@ pub fn cycle_style(h: &dyn ClientHost, back: bool) {
         return;
     }
     let at = styles.iter().position(|t| t.id == theme.id).unwrap_or(0);
-    let next = if back { styles[(at + styles.len() - 1) % styles.len()] } else { styles[(at + 1) % styles.len()] };
-    opts::set(h, "theme_style", if next.style.is_empty() { "default" } else { &next.style });
+    let next = if back {
+        styles[(at + styles.len() - 1) % styles.len()]
+    } else {
+        styles[(at + 1) % styles.len()]
+    };
+    opts::set(
+        h,
+        "theme_style",
+        if next.style.is_empty() {
+            "default"
+        } else {
+            &next.style
+        },
+    );
 }

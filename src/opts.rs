@@ -33,15 +33,21 @@ pub(crate) struct Store {
     hide_entities: Vec<String>,
 }
 
-static STORE: Mutex<Store> = Mutex::new(Store { loaded: false, values: BTreeMap::new(), overrides: BTreeMap::new(), hide_blocks: Vec::new(), hide_entities: Vec::new() });
+static STORE: Mutex<Store> = Mutex::new(Store {
+    loaded: false,
+    values: BTreeMap::new(),
+    overrides: BTreeMap::new(),
+    hide_blocks: Vec::new(),
+    hide_entities: Vec::new(),
+});
 
 fn store<R>(f: impl FnOnce(&mut Store) -> R) -> R {
     let mut g = STORE.lock().unwrap_or_else(|e| e.into_inner());
     f(&mut g)
 }
 
-fn path(name: &str) -> Option<ConfigPath> {
-    ConfigPath::new(&format!("jade/{name}")).ok()
+fn path(host: &dyn Host, name: &str) -> std::path::PathBuf {
+    host.config_dir().join("jade").join(name)
 }
 
 /// A config file's JSON object, or None.
@@ -54,9 +60,9 @@ pub(crate) struct JsonObject(pub serde_json::Map<String, Value>);
 pub(crate) struct JsonRef<'a>(pub Option<&'a Value>);
 
 pub fn read_json(host: &dyn Host, name: &str) -> Option<JsonObject> {
-    let bytes = match host.config_files().read(&path(name)?) {
+    let bytes = match std::fs::read(path(host, name)) {
         Ok(b) => b,
-        Err(ConfigFileError::NotFound) => return None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         Err(e) => {
             eprintln!("jade: can't read config/jade/{name}: {e:?}");
             return None;
@@ -68,10 +74,16 @@ pub fn read_json(host: &dyn Host, name: &str) -> Option<JsonObject> {
     }
 }
 
+fn write_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, bytes)
+}
+
 pub fn write_json(host: &dyn Host, name: &str, map: &JsonObject) -> bool {
-    let Some(p) = path(name) else { return false };
     let text = serde_json::to_string_pretty(&Value::Object(map.0.clone())).unwrap_or_default();
-    match host.config_files().write(&p, text.as_bytes()) {
+    match write_file(&path(host, name), text.as_bytes()) {
         Ok(()) => true,
         Err(e) => {
             eprintln!("jade: can't write config/jade/{name}: {e:?}");
@@ -89,23 +101,62 @@ fn as_string(v: JsonRef<'_>) -> Option<String> {
     }
 }
 
-const HIDE_BLOCKS: &[&str] = &["minecraft:barrier", "minecraft:light", "minecraft:structure_void"];
-const HIDE_ENTITIES: &[&str] = &["minecraft:area_effect_cloud", "minecraft:firework_rocket", "minecraft:interaction", "minecraft:text_display", "minecraft:lightning_bolt"];
+const HIDE_BLOCKS: &[&str] = &[
+    "minecraft:barrier",
+    "minecraft:light",
+    "minecraft:structure_void",
+];
+const HIDE_ENTITIES: &[&str] = &[
+    "minecraft:area_effect_cloud",
+    "minecraft:firework_rocket",
+    "minecraft:interaction",
+    "minecraft:text_display",
+    "minecraft:lightning_bolt",
+];
 
 /// Reads the files once (and again after `reload`): a missing jade.json or ignore list is written with its defaults.
 fn ensure(host: &dyn Host) {
     if store(|s| s.loaded) {
         return;
     }
-    let values: BTreeMap<String, String> = read_json(host, "jade.json").map(|m| m.0.iter().filter_map(|(k, v)| Some((k.clone(), as_string(JsonRef(Some(v)))?))).collect()).unwrap_or_default();
-    let overrides: BTreeMap<String, String> = read_json(host, "server-plugin-overrides.json").map(|m| m.0.iter().filter_map(|(k, v)| Some((k.clone(), as_string(JsonRef(Some(v)))?))).collect()).unwrap_or_default();
+    let values: BTreeMap<String, String> = read_json(host, "jade.json")
+        .map(|m| {
+            m.0.iter()
+                .filter_map(|(k, v)| Some((k.clone(), as_string(JsonRef(Some(v)))?)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let overrides: BTreeMap<String, String> = read_json(host, "server-plugin-overrides.json")
+        .map(|m| {
+            m.0.iter()
+                .filter_map(|(k, v)| Some((k.clone(), as_string(JsonRef(Some(v)))?)))
+                .collect()
+        })
+        .unwrap_or_default();
     let list = |name: &str, defaults: &[&str]| -> Vec<String> {
         match read_json(host, name) {
-            Some(m) => m.0.get("values").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default(),
+            Some(m) => {
+                m.0.get("values")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
             None => {
                 let mut m = serde_json::Map::new();
                 m.insert("__comment".to_owned(), Value::String("This is an ignore list for the target of Jade. You can add registry ids to the \"values\" list.".to_owned()));
-                m.insert("values".to_owned(), Value::Array(defaults.iter().map(|d| Value::String((*d).to_owned())).collect()));
+                m.insert(
+                    "values".to_owned(),
+                    Value::Array(
+                        defaults
+                            .iter()
+                            .map(|d| Value::String((*d).to_owned()))
+                            .collect(),
+                    ),
+                );
                 write_json(host, name, &JsonObject(m));
                 defaults.iter().map(|d| (*d).to_owned()).collect()
             }
@@ -131,7 +182,10 @@ pub fn reload() {
 
 fn save(host: &dyn Host) {
     let map: serde_json::Map<String, Value> = store(|s| {
-        s.values.iter().map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect()
+        s.values
+            .iter()
+            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+            .collect()
     });
     write_json(host, "jade.json", &JsonObject(map));
 }
@@ -152,7 +206,9 @@ static PLAYERS: Mutex<Option<HashMap<u128, HashMap<String, String>>>> = Mutex::n
 
 /// A client's values: only known keys, short values, and at most this many.
 pub fn set_player_values(player: u128, text: &str) {
-    let known = |k: &str| option(k).is_some() || crate::api::registry(|r| r.options.iter().any(|(o, _, _)| *o == k));
+    let known = |k: &str| {
+        option(k).is_some() || crate::api::registry(|r| r.options.iter().any(|(o, _, _)| *o == k))
+    };
     let map: HashMap<String, String> = text
         .split('\u{1f}')
         .filter_map(|kv| kv.split_once('='))
@@ -176,7 +232,12 @@ pub fn forget_player(player: u128) {
 
 /// `f` with `player`'s values as `opt` and `on` read them.
 pub fn with_player<R>(player: u128, f: impl FnOnce() -> R) -> R {
-    let values = PLAYERS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|all| all.get(&player).cloned()).unwrap_or_default();
+    let values = PLAYERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|all| all.get(&player).cloned())
+        .unwrap_or_default();
     PLAYER.with_borrow_mut(|p| *p = Some(values));
     let out = f();
     PLAYER.with_borrow_mut(|p| *p = None);
@@ -199,7 +260,12 @@ fn default_of(key: &str) -> Option<String> {
     if let Some(o) = option(key) {
         return Some(o.default.to_owned());
     }
-    crate::api::registry(|r| r.options.iter().find(|(k, _, _)| *k == key).map(|(_, _, d)| d.to_string()))
+    crate::api::registry(|r| {
+        r.options
+            .iter()
+            .find(|(k, _, _)| *k == key)
+            .map(|(_, _, d)| d.to_string())
+    })
 }
 
 /// A setting's value now: the server's override, else (answering a player) that player's, else this game's, else
@@ -212,7 +278,9 @@ pub fn opt(host: &dyn Host, key: &str) -> String {
     if let Some(v) = PLAYER.with_borrow(|p| p.as_ref().map(|m| m.get(key).cloned())) {
         return v.or_else(|| default_of(key)).unwrap_or_default();
     }
-    store(|s| s.values.get(key).cloned()).or_else(|| default_of(key)).unwrap_or_default()
+    store(|s| s.values.get(key).cloned())
+        .or_else(|| default_of(key))
+        .unwrap_or_default()
 }
 
 /// What this game keeps for `key`, if anything (not its default).
@@ -228,7 +296,6 @@ pub fn on(host: &dyn Host, key: &str) -> bool {
 pub fn num(host: &dyn Host, key: &str) -> f64 {
     opt(host, key).parse().unwrap_or(0.0)
 }
-
 
 /// Keeps a value and writes the file.
 pub fn set(host: &dyn Host, key: &str, value: &str) {
@@ -254,25 +321,54 @@ pub fn commit(host: &dyn Host) {
 fn profile_preset(profile: &str) -> &'static [(&'static str, &'static str)] {
     match profile {
         // jade.profile_preset.accessibility.
-        "1" => &[("accessibility_plugin", "true"), ("always_list_mode", "true"), ("animation", "false"), ("overlay_alpha", "100"), ("block_face", "true"), ("mod_name", "false")],
+        "1" => &[
+            ("accessibility_plugin", "true"),
+            ("always_list_mode", "true"),
+            ("animation", "false"),
+            ("overlay_alpha", "100"),
+            ("block_face", "true"),
+            ("mod_name", "false"),
+        ],
         // jade.profile_preset.minimalism.
-        "2" => &[("display_mode", "lite"), ("boss_bar_overlap", "hide_tip"), ("overlay_alpha", "0"), ("overlay_theme", "dark"), ("theme_style", "slim"), ("display_item", "inline"), ("breaking_progress", "false"), ("harvest_tool", "false"), ("item_tooltip", "false")],
+        "2" => &[
+            ("display_mode", "lite"),
+            ("boss_bar_overlap", "hide_tip"),
+            ("overlay_alpha", "0"),
+            ("overlay_theme", "dark"),
+            ("theme_style", "slim"),
+            ("display_item", "inline"),
+            ("breaking_progress", "false"),
+            ("harvest_tool", "false"),
+            ("item_tooltip", "false"),
+        ],
         _ => &[],
     }
 }
 
 fn profile_keys() -> Vec<String> {
-    let mut keys: Vec<String> = OPTIONS.iter().filter(|o| o.key != "profile" && o.key != "enable_profiles").map(|o| o.key.to_owned()).collect();
-    keys.extend(crate::api::registry(|r| r.options.iter().map(|(k, _, _)| (*k).to_owned()).collect::<Vec<_>>()));
+    let mut keys: Vec<String> = OPTIONS
+        .iter()
+        .filter(|o| o.key != "profile" && o.key != "enable_profiles")
+        .map(|o| o.key.to_owned())
+        .collect();
+    keys.extend(crate::api::registry(|r| {
+        r.options
+            .iter()
+            .map(|(k, _, _)| (*k).to_owned())
+            .collect::<Vec<_>>()
+    }));
     keys
 }
 
 /// Jade.saveProfile: this game's settings, kept as profile `n`'s (`config/jade/profile-<n>.json`).
 pub fn save_profile(host: &dyn Host, n: &str) {
-    let map: serde_json::Map<String, Value> = profile_keys().into_iter().map(|k| {
-        let v = opt(host, &k);
-        (k, Value::String(v))
-    }).collect();
+    let map: serde_json::Map<String, Value> = profile_keys()
+        .into_iter()
+        .map(|k| {
+            let v = opt(host, &k);
+            (k, Value::String(v))
+        })
+        .collect();
     write_json(host, &format!("profile-{n}.json"), &JsonObject(map));
 }
 
@@ -335,7 +431,11 @@ pub fn reset(host: &dyn Host) {
 
 /// `/jadec generate_server_overrides [pattern]`: the matching options' values now, as the server's forced ones.
 pub fn generate_overrides(host: &dyn Host, pattern: &str) -> Option<usize> {
-    let wanted: serde_json::Map<String, Value> = OPTIONS.iter().filter(|o| pattern.is_empty() || o.key.contains(pattern)).map(|o| (o.key.to_owned(), Value::String(opt(host, o.key)))).collect();
+    let wanted: serde_json::Map<String, Value> = OPTIONS
+        .iter()
+        .filter(|o| pattern.is_empty() || o.key.contains(pattern))
+        .map(|o| (o.key.to_owned(), Value::String(opt(host, o.key))))
+        .collect();
     if wanted.is_empty() {
         return None;
     }
@@ -347,9 +447,11 @@ pub fn generate_overrides(host: &dyn Host, pattern: &str) -> Option<usize> {
 
 /// `/jadec handlers`: the options listed in `config/jade/handlers.md`.
 pub fn dump_handlers(host: &dyn Host) -> bool {
-    let text: Vec<String> = OPTIONS.iter().map(|o| format!("- `{}`: {} (default {})", o.key, o.label, o.default)).collect();
-    let Some(p) = path("handlers.md") else { return false };
-    host.config_files().write(&p, text.join("\n").as_bytes()).is_ok()
+    let text: Vec<String> = OPTIONS
+        .iter()
+        .map(|o| format!("- `{}`: {} (default {})", o.key, o.label, o.default))
+        .collect();
+    write_file(&path(host, "handlers.md"), text.join("\n").as_bytes()).is_ok()
 }
 
 /// The options a plugin added: key, label and default, in the order they came.
@@ -385,7 +487,11 @@ pub fn value_label(h: &dyn ClientHost, o: &Opt) -> String {
     if value.starts_with("custom:") {
         return "Custom".to_owned();
     }
-    let english = o.values.iter().find(|(v, _)| *v == value).map_or(value.as_str(), |(_, l)| *l);
+    let english = o
+        .values
+        .iter()
+        .find(|(v, _)| *v == value)
+        .map_or(value.as_str(), |(_, l)| *l);
     match value_lang_key(o.key, &value) {
         Some(key) => tr(h, &key, english),
         None => english.to_owned(),
@@ -400,14 +506,21 @@ fn value_lang_key(option: &str, value: &str) -> Option<String> {
         (_, "false") => return Some("options.off".to_owned()),
         ("reach_distance", "0") => return Some("options.off".to_owned()),
         ("display_mode", "hold") => "hold_key",
-        ("display_mode" | "display_fluids" | "display_item" | "tts_mode" | "perspective_mode", v) => v,
+        (
+            "display_mode" | "display_fluids" | "display_item" | "tts_mode" | "perspective_mode",
+            v,
+        ) => v,
         ("boss_bar_overlap", "none") => "no_operation",
         ("boss_bar_overlap", "hide_bar") => "hide_boss_bar",
         ("boss_bar_overlap", "hide_tip") => "hide_tooltip",
         ("boss_bar_overlap", "push") => "push_down",
         ("registry_name", "advanced") => "advanced_tooltips",
-        ("pet_armor_mode", "damageable") => return Some("config.jade.plugin_minecraft.pet_armor_show_damageable".to_owned()),
-        ("pet_armor_mode", "all") => return Some("config.jade.plugin_minecraft.pet_armor_show_all".to_owned()),
+        ("pet_armor_mode", "damageable") => {
+            return Some("config.jade.plugin_minecraft.pet_armor_show_damageable".to_owned());
+        }
+        ("pet_armor_mode", "all") => {
+            return Some("config.jade.plugin_minecraft.pet_armor_show_all".to_owned());
+        }
         ("energy_style" | "fluid_style", "bar") => "progress_bar",
         ("energy_style" | "fluid_style", "plain") => "plain_text",
         ("energy_style" | "fluid_style", "icon") => "icon",
@@ -433,40 +546,175 @@ pub fn option(key: &str) -> Option<&'static Opt> {
 
 const ONOFF: &[(&str, &str)] = &[("true", "On"), ("false", "Off")];
 const fn on_by_default(key: &'static str, label: &'static str) -> Opt {
-    Opt { key, label, default: "true", values: ONOFF }
+    Opt {
+        key,
+        label,
+        default: "true",
+        values: ONOFF,
+    }
 }
 const fn off_by_default(key: &'static str, label: &'static str) -> Opt {
-    Opt { key, label, default: "false", values: ONOFF }
+    Opt {
+        key,
+        label,
+        default: "false",
+        values: ONOFF,
+    }
 }
 
 /// WailaConfig and the plugin options, in the order of Jade's settings screen.
 pub const OPTIONS: &[Opt] = &[
     on_by_default("display_tooltip", "Enabled"),
-    Opt { key: "display_mode", label: "Display Mode", default: "toggle", values: &[("toggle", "Toggle"), ("hold", "Hold"), ("lite", "Lite")] },
+    Opt {
+        key: "display_mode",
+        label: "Display Mode",
+        default: "toggle",
+        values: &[("toggle", "Toggle"), ("hold", "Hold"), ("lite", "Lite")],
+    },
     on_by_default("display_blocks", "Display Blocks"),
     on_by_default("display_entities", "Display Entities"),
     on_by_default("display_bosses", "Display Bosses"),
-    Opt { key: "display_fluids", label: "Display Fluids", default: "none", values: &[("none", "None"), ("any", "Any"), ("fallback", "Fallback")] },
+    Opt {
+        key: "display_fluids",
+        label: "Display Fluids",
+        default: "none",
+        values: &[("none", "None"), ("any", "Any"), ("fallback", "Fallback")],
+    },
     on_by_default("hide_from_tab_list", "Hide from Player List"),
     on_by_default("hide_from_guis", "Hide from GUIs"),
-    Opt { key: "boss_bar_overlap", label: "Boss Bar Overlap", default: "push", values: &[("none", "No Operation"), ("hide_bar", "Hide Boss Bar"), ("hide_tip", "Hide Tooltip"), ("push", "Push Down Tooltip")] },
-    Opt { key: "display_item", label: "Icon Position", default: "top", values: &[("hide", "Hide"), ("top", "Top"), ("centered", "Centered"), ("inline", "In-line")] },
-    Opt { key: "tts_mode", label: "Text to Speech Mode", default: "press", values: &[("press", "Press"), ("toggle", "Toggle")] },
-    Opt { key: "perspective_mode", label: "Perspective Mode", default: "camera", values: &[("camera", "From Camera"), ("eye", "From Eye")] },
-    Opt { key: "reach_distance", label: "Extended Reach", default: "0", values: &[("0", "Off"), ("5", "5"), ("10", "10"), ("15", "15"), ("20", "20")] },
+    Opt {
+        key: "boss_bar_overlap",
+        label: "Boss Bar Overlap",
+        default: "push",
+        values: &[
+            ("none", "No Operation"),
+            ("hide_bar", "Hide Boss Bar"),
+            ("hide_tip", "Hide Tooltip"),
+            ("push", "Push Down Tooltip"),
+        ],
+    },
+    Opt {
+        key: "display_item",
+        label: "Icon Position",
+        default: "top",
+        values: &[
+            ("hide", "Hide"),
+            ("top", "Top"),
+            ("centered", "Centered"),
+            ("inline", "In-line"),
+        ],
+    },
+    Opt {
+        key: "tts_mode",
+        label: "Text to Speech Mode",
+        default: "press",
+        values: &[("press", "Press"), ("toggle", "Toggle")],
+    },
+    Opt {
+        key: "perspective_mode",
+        label: "Perspective Mode",
+        default: "camera",
+        values: &[("camera", "From Camera"), ("eye", "From Eye")],
+    },
+    Opt {
+        key: "reach_distance",
+        label: "Extended Reach",
+        default: "0",
+        values: &[
+            ("0", "Off"),
+            ("5", "5"),
+            ("10", "10"),
+            ("15", "15"),
+            ("20", "20"),
+        ],
+    },
     on_by_default("item_mod_name", "Mod Name on Item Tooltip"),
-    Opt { key: "overlay_x", label: "Overlay Position X", default: "center", values: &[("left", "Left"), ("center", "Center"), ("right", "Right")] },
-    Opt { key: "position", label: "Overlay Position Y", default: "0", values: &[("0", "Top"), ("1", "Upper"), ("2", "Middle"), ("3", "Bottom")] },
-    Opt { key: "scale", label: "Display Scale", default: "1", values: &[("0.5", "0.5"), ("0.75", "0.75"), ("1", "1"), ("1.25", "1.25"), ("1.5", "1.5")] },
-    Opt { key: "text_background_opacity", label: "Text Background Opacity", default: "0", values: &[("0", "0%"), ("25", "25%"), ("50", "50%"), ("75", "75%"), ("100", "100%")] },
+    Opt {
+        key: "overlay_x",
+        label: "Overlay Position X",
+        default: "center",
+        values: &[("left", "Left"), ("center", "Center"), ("right", "Right")],
+    },
+    Opt {
+        key: "position",
+        label: "Overlay Position Y",
+        default: "0",
+        values: &[
+            ("0", "Top"),
+            ("1", "Upper"),
+            ("2", "Middle"),
+            ("3", "Bottom"),
+        ],
+    },
+    Opt {
+        key: "scale",
+        label: "Display Scale",
+        default: "1",
+        values: &[
+            ("0.5", "0.5"),
+            ("0.75", "0.75"),
+            ("1", "1"),
+            ("1.25", "1.25"),
+            ("1.5", "1.5"),
+        ],
+    },
+    Opt {
+        key: "text_background_opacity",
+        label: "Text Background Opacity",
+        default: "0",
+        values: &[
+            ("0", "0%"),
+            ("25", "25%"),
+            ("50", "50%"),
+            ("75", "75%"),
+            ("100", "100%"),
+        ],
+    },
     off_by_default("flip_main_hand", "Flip Position with Main Hand"),
-    Opt { key: "overlay_alpha", label: "Background Opacity", default: "70", values: &[("0", "0%"), ("25", "25%"), ("50", "50%"), ("70", "70%"), ("85", "85%"), ("100", "100%")] },
-    Opt { key: "overlay_theme", label: "Theme", default: "dark", values: &[("dark", "Dark"), ("waila", "Classic"), ("create", "Create"), ("top", "One Probe")] },
-    Opt { key: "theme_style", label: "Theme Style", default: "default", values: &[("default", "Default"), ("slim", "Slim")] },
+    Opt {
+        key: "overlay_alpha",
+        label: "Background Opacity",
+        default: "70",
+        values: &[
+            ("0", "0%"),
+            ("25", "25%"),
+            ("50", "50%"),
+            ("70", "70%"),
+            ("85", "85%"),
+            ("100", "100%"),
+        ],
+    },
+    Opt {
+        key: "overlay_theme",
+        label: "Theme",
+        default: "dark",
+        values: &[
+            ("dark", "Dark"),
+            ("waila", "Classic"),
+            ("create", "Create"),
+            ("top", "One Probe"),
+        ],
+    },
+    Opt {
+        key: "theme_style",
+        label: "Theme Style",
+        default: "default",
+        values: &[("default", "Default"), ("slim", "Slim")],
+    },
     on_by_default("animation", "Overlay Animation"),
     off_by_default("narrate_keys", "Narrate Key Binds"),
     off_by_default("enable_profiles", "Profiles Enabled"),
-    Opt { key: "profile", label: "Profile", default: "0", values: &[("0", "#0"), ("1", "#1 Accessibility Mode"), ("2", "#2 Minimalism"), ("3", "#3")] },
+    Opt {
+        key: "profile",
+        label: "Profile",
+        default: "0",
+        values: &[
+            ("0", "#0"),
+            ("1", "#1 Accessibility Mode"),
+            ("2", "#2 Minimalism"),
+            ("3", "#3"),
+        ],
+    },
     off_by_default("debug_mode", "Debug Mode"),
     // WailaConfig.General.builtinCamouflage (no screen in Jade; in the file there).
     on_by_default("builtin_camouflage", "Built-in Camouflage"),
@@ -479,21 +727,56 @@ pub const OPTIONS: &[Opt] = &[
     off_by_default("coordinates", "Coordinates"),
     off_by_default("coordinates_rel", "Relative Coordinates"),
     off_by_default("block_face", "Block Face"),
-    Opt { key: "registry_name", label: "Registry Name", default: "false", values: &[("false", "Off"), ("true", "On"), ("advanced", "Advanced Tooltips")] },
+    Opt {
+        key: "registry_name",
+        label: "Registry Name",
+        default: "false",
+        values: &[
+            ("false", "Off"),
+            ("true", "On"),
+            ("advanced", "Advanced Tooltips"),
+        ],
+    },
     off_by_default("registry_special", "Special IDs"),
     off_by_default("block_states", "Block States"),
     off_by_default("block_properties", "Block Properties"),
     off_by_default("loot_table", "Loot Table"),
     // Minecraft - Entity.
     on_by_default("entity_health", "Entity Health"),
-    Opt { key: "health_max", label: "Max Health for Render", default: "40", values: &[("20", "20"), ("40", "40"), ("60", "60"), ("100", "100")] },
-    Opt { key: "health_per_line", label: "Icons per Line", default: "10", values: &[("5", "5"), ("10", "10"), ("15", "15"), ("20", "20")] },
+    Opt {
+        key: "health_max",
+        label: "Max Health for Render",
+        default: "40",
+        values: &[("20", "20"), ("40", "40"), ("60", "60"), ("100", "100")],
+    },
+    Opt {
+        key: "health_per_line",
+        label: "Icons per Line",
+        default: "10",
+        values: &[("5", "5"), ("10", "10"), ("15", "15"), ("20", "20")],
+    },
     off_by_default("health_fractions", "Show Fractions"),
     on_by_default("entity_armor", "Entity Armor"),
-    Opt { key: "armor_max", label: "Max Armors for Render", default: "20", values: &[("10", "10"), ("20", "20"), ("40", "40")] },
+    Opt {
+        key: "armor_max",
+        label: "Max Armors for Render",
+        default: "20",
+        values: &[("10", "10"), ("20", "20"), ("40", "40")],
+    },
     on_by_default("entity_stats", "Horse Stats"),
     on_by_default("potion_effects", "Entity Effects"),
-    Opt { key: "effects_limit", label: "Effects Limit", default: "5", values: &[("1", "1"), ("3", "3"), ("5", "5"), ("10", "10"), ("99", "No limit")] },
+    Opt {
+        key: "effects_limit",
+        label: "Effects Limit",
+        default: "5",
+        values: &[
+            ("1", "1"),
+            ("3", "3"),
+            ("5", "5"),
+            ("10", "10"),
+            ("99", "No limit"),
+        ],
+    },
     on_by_default("item_frame", "Item Frame"),
     on_by_default("container_entity", "Container Entity"),
     on_by_default("mob_growth", "Mob Growth"),
@@ -507,7 +790,12 @@ pub const OPTIONS: &[Opt] = &[
     off_by_default("villager_restock", "Villager Restock"),
     on_by_default("zombie_villager", "Zombie Villager Conversion"),
     on_by_default("pet_armor", "Pet Armor"),
-    Opt { key: "pet_armor_mode", label: "Pet Armor Shows", default: "damageable", values: &[("damageable", "Show Damageable"), ("all", "Show All")] },
+    Opt {
+        key: "pet_armor_mode",
+        label: "Pet Armor Shows",
+        default: "damageable",
+        values: &[("damageable", "Show Damageable"), ("all", "Show All")],
+    },
     on_by_default("item_tooltip", "Item Description"),
     // Minecraft - Block.
     on_by_default("breaking_progress", "Breaking Progress"),
@@ -525,17 +813,61 @@ pub const OPTIONS: &[Opt] = &[
     on_by_default("total_enchantment_power", "Total Enchantment Power"),
     on_by_default("player_head", "Player Head"),
     on_by_default("item_storage", "Item Storage"),
-    Opt { key: "storage_detailed", label: "Item Storage: Detailed Amount", default: "54", values: &[("27", "27"), ("54", "54"), ("108", "108")] },
-    Opt { key: "storage_normal", label: "Item Storage: Normal Amount", default: "9", values: &[("0", "0"), ("9", "9"), ("18", "18"), ("27", "27"), ("54", "54")] },
-    Opt { key: "storage_names", label: "Item Storage: Show Name Threshold", default: "5", values: &[("0", "0"), ("2", "2"), ("5", "5"), ("9", "9")] },
-    Opt { key: "storage_per_line", label: "Item Storage: Items per Line", default: "9", values: &[("5", "5"), ("9", "9"), ("12", "12")] },
+    Opt {
+        key: "storage_detailed",
+        label: "Item Storage: Detailed Amount",
+        default: "54",
+        values: &[("27", "27"), ("54", "54"), ("108", "108")],
+    },
+    Opt {
+        key: "storage_normal",
+        label: "Item Storage: Normal Amount",
+        default: "9",
+        values: &[
+            ("0", "0"),
+            ("9", "9"),
+            ("18", "18"),
+            ("27", "27"),
+            ("54", "54"),
+        ],
+    },
+    Opt {
+        key: "storage_names",
+        label: "Item Storage: Show Name Threshold",
+        default: "5",
+        values: &[("0", "0"), ("2", "2"), ("5", "5"), ("9", "9")],
+    },
+    Opt {
+        key: "storage_per_line",
+        label: "Item Storage: Items per Line",
+        default: "9",
+        values: &[("5", "5"), ("9", "9"), ("12", "12")],
+    },
     off_by_default("storage_sort", "Item Storage: Sort by Count"),
     on_by_default("energy_storage", "Energy Storage"),
     off_by_default("energy_detailed", "Energy Storage: Detailed-Only"),
-    Opt { key: "energy_style", label: "Energy Storage: Display Style", default: "bar", values: &[("bar", "Progress Bar"), ("plain", "Plain Text"), ("icon", "Icon")] },
+    Opt {
+        key: "energy_style",
+        label: "Energy Storage: Display Style",
+        default: "bar",
+        values: &[
+            ("bar", "Progress Bar"),
+            ("plain", "Plain Text"),
+            ("icon", "Icon"),
+        ],
+    },
     on_by_default("fluid_storage", "Fluid Storage"),
     off_by_default("fluid_detailed", "Fluid Storage: Detailed-Only"),
-    Opt { key: "fluid_style", label: "Fluid Storage: Display Style", default: "bar", values: &[("bar", "Progress Bar"), ("plain", "Plain Text"), ("icon", "Icon")] },
+    Opt {
+        key: "fluid_style",
+        label: "Fluid Storage: Display Style",
+        default: "bar",
+        values: &[
+            ("bar", "Progress Bar"),
+            ("plain", "Plain Text"),
+            ("icon", "Icon"),
+        ],
+    },
     on_by_default("lectern", "Lectern"),
     on_by_default("furnace", "Furnace Contents"),
     on_by_default("mob_spawner", "Mob Spawner"),
@@ -571,7 +903,11 @@ pub fn fill(pattern: &str, args: &[&str]) -> String {
             match c.get(at) {
                 Some('%') if !numbered => out.push('%'),
                 Some('s' | 'd') if numbered => {
-                    let n: usize = c[i + 1..i + 1 + digits].iter().collect::<String>().parse().unwrap_or(1);
+                    let n: usize = c[i + 1..i + 1 + digits]
+                        .iter()
+                        .collect::<String>()
+                        .parse()
+                        .unwrap_or(1);
                     out.push_str(arg(n.saturating_sub(1)));
                 }
                 Some('s' | 'd') => {
@@ -605,8 +941,14 @@ pub fn fill(pattern: &str, args: &[&str]) -> String {
             let number = parts.next().and_then(|n| n.trim().parse::<usize>().ok());
             match (number, parts.next().map(str::trim), parts.next()) {
                 (Some(n), None, _) => out.push_str(arg(n)),
-                (Some(n), Some("choice"), Some(choices)) => out.push_str(choice(choices, arg(n).parse::<f64>().unwrap_or(0.0))),
-                (Some(_), Some("select"), Some(cases)) => out.push_str(cases.rsplit_once("other {").map_or("", |(_, rest)| rest.strip_suffix('}').unwrap_or(rest))),
+                (Some(n), Some("choice"), Some(choices)) => {
+                    out.push_str(choice(choices, arg(n).parse::<f64>().unwrap_or(0.0)))
+                }
+                (Some(_), Some("select"), Some(cases)) => out.push_str(
+                    cases
+                        .rsplit_once("other {")
+                        .map_or("", |(_, rest)| rest.strip_suffix('}').unwrap_or(rest)),
+                ),
                 _ => {
                     out.push('{');
                     out.push_str(&body);
@@ -626,7 +968,12 @@ pub fn fill(pattern: &str, args: &[&str]) -> String {
 fn choice(choices: &str, number: f64) -> &str {
     let mut chosen = "";
     for (i, part) in choices.split('|').enumerate() {
-        let Some((at, mark)) = part.char_indices().find(|(_, m)| matches!(m, '#' | '≤' | '<')) else { continue };
+        let Some((at, mark)) = part
+            .char_indices()
+            .find(|(_, m)| matches!(m, '#' | '≤' | '<'))
+        else {
+            continue;
+        };
         let limit: f64 = part[..at].trim().parse().unwrap_or(0.0);
         if i == 0 || number > limit || (mark != '<' && number == limit) {
             chosen = &part[at + mark.len_utf8()..];
@@ -641,17 +988,76 @@ pub fn option_lang_key(key: &str) -> Option<String> {
     let minecraft = |path: &str| Some(format!("config.jade.plugin_minecraft.{path}"));
     let core = |path: &str| Some(format!("config.jade.plugin_jade.{path}"));
     match key {
-        "display_tooltip" | "display_mode" | "display_blocks" | "display_entities" | "display_bosses" | "display_fluids" | "hide_from_tab_list" | "hide_from_guis" | "boss_bar_overlap" | "display_item" | "tts_mode"
-        | "perspective_mode" | "reach_distance" | "item_mod_name" | "text_background_opacity" | "flip_main_hand" | "overlay_alpha" | "overlay_theme" | "theme_style" | "animation" | "narrate_keys" | "enable_profiles"
-        | "debug_mode" | "accessibility_plugin" | "always_list_mode" => Some(format!("config.jade.{key}")),
+        "display_tooltip"
+        | "display_mode"
+        | "display_blocks"
+        | "display_entities"
+        | "display_bosses"
+        | "display_fluids"
+        | "hide_from_tab_list"
+        | "hide_from_guis"
+        | "boss_bar_overlap"
+        | "display_item"
+        | "tts_mode"
+        | "perspective_mode"
+        | "reach_distance"
+        | "item_mod_name"
+        | "text_background_opacity"
+        | "flip_main_hand"
+        | "overlay_alpha"
+        | "overlay_theme"
+        | "theme_style"
+        | "animation"
+        | "narrate_keys"
+        | "enable_profiles"
+        | "debug_mode"
+        | "accessibility_plugin"
+        | "always_list_mode" => Some(format!("config.jade.{key}")),
         "scale" => Some("config.jade.overlay_scale".to_owned()),
-        "object_name" | "mod_name" | "mod_name_smaller" | "distance" | "coordinates" | "block_face" | "registry_name" | "block_states" | "block_properties" | "loot_table" => core(key),
+        "object_name" | "mod_name" | "mod_name_smaller" | "distance" | "coordinates"
+        | "block_face" | "registry_name" | "block_states" | "block_properties" | "loot_table" => {
+            core(key)
+        }
         "mod_name_translated" => core("mod_name.translated"),
         "coordinates_rel" => core("coordinates.rel"),
         "registry_special" => core("registry_name.special"),
-        "entity_health" | "entity_armor" | "potion_effects" | "item_frame" | "container_entity" | "mob_growth" | "mob_breeding" | "armor_stand" | "painting" | "next_entity_drop" | "animal_owner" | "sulfur_cube"
-        | "villager_profession" | "villager_restock" | "zombie_villager" | "pet_armor" | "item_tooltip" | "breaking_progress" | "harvest_tool" | "brewing_stand" | "tnt_stability" | "beehive" | "note_block" | "command_block"
-        | "enchantment_power" | "total_enchantment_power" | "player_head" | "item_storage" | "energy_storage" | "fluid_storage" | "lectern" | "furnace" | "mob_spawner" | "crop_progress" | "redstone" | "jukebox" | "shelf"
+        "entity_health"
+        | "entity_armor"
+        | "potion_effects"
+        | "item_frame"
+        | "container_entity"
+        | "mob_growth"
+        | "mob_breeding"
+        | "armor_stand"
+        | "painting"
+        | "next_entity_drop"
+        | "animal_owner"
+        | "sulfur_cube"
+        | "villager_profession"
+        | "villager_restock"
+        | "zombie_villager"
+        | "pet_armor"
+        | "item_tooltip"
+        | "breaking_progress"
+        | "harvest_tool"
+        | "brewing_stand"
+        | "tnt_stability"
+        | "beehive"
+        | "note_block"
+        | "command_block"
+        | "enchantment_power"
+        | "total_enchantment_power"
+        | "player_head"
+        | "item_storage"
+        | "energy_storage"
+        | "fluid_storage"
+        | "lectern"
+        | "furnace"
+        | "mob_spawner"
+        | "crop_progress"
+        | "redstone"
+        | "jukebox"
+        | "shelf"
         | "waxed" => minecraft(key),
         "health_max" => minecraft("entity_health.max_for_render"),
         "health_per_line" => minecraft("entity_health.icons_per_line"),
@@ -727,7 +1133,11 @@ pub fn human(number: i64, unit: &str) -> String {
     let exp = ((v.log10() as usize) / 3).min(7);
     v /= 1000f64.powi(exp as i32);
     let sign = if number < 0 { "-" } else { "" };
-    let prefix = if exp == 0 { String::new() } else { "kMGTPEZ"[exp - 1..exp].to_owned() };
+    let prefix = if exp == 0 {
+        String::new()
+    } else {
+        "kMGTPEZ"[exp - 1..exp].to_owned()
+    };
     format!("{sign}{}{prefix}{unit}", trim2(v))
 }
 
@@ -742,7 +1152,11 @@ pub fn seconds_marker(ticks: i64) -> String {
         if m == 0 {
             return tr("jade.hours", "{0}h", &[&h.to_string()]);
         }
-        return tr("jade.hours_minutes", "{0}h {1}m", &[&h.to_string(), &m.to_string()]);
+        return tr(
+            "jade.hours_minutes",
+            "{0}h {1}m",
+            &[&h.to_string(), &m.to_string()],
+        );
     }
     if s >= 60 {
         let m = s / 60;
@@ -750,7 +1164,11 @@ pub fn seconds_marker(ticks: i64) -> String {
         if s == 0 {
             return tr("jade.minutes", "{0}m", &[&m.to_string()]);
         }
-        return tr("jade.minutes_seconds", "{0}m {1}s", &[&m.to_string(), &s.to_string()]);
+        return tr(
+            "jade.minutes_seconds",
+            "{0}m {1}s",
+            &[&m.to_string(), &s.to_string()],
+        );
     }
     tr("jade.seconds", "{0}s", &[&s.to_string()])
 }
@@ -758,5 +1176,9 @@ pub fn seconds_marker(ticks: i64) -> String {
 /// StringUtil.formatTickDuration: m:ss (h:mm:ss past an hour).
 pub fn tick_duration(ticks: i64) -> String {
     let s = ticks / 20;
-    if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60) } else { format!("{}:{:02}", s / 60, s % 60) }
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
 }

@@ -31,13 +31,21 @@ pub fn register_keys(r: &mut dyn Registrar) {
 
 /// The key a mapping is bound to now (Controls), as the game names it.
 pub fn bound(h: &dyn ClientHost, name: &str) -> String {
-    crate::keys::binding(h, &name.replace('.', "_")).map(|(k, _)| k).unwrap_or_else(|| KEYS.iter().find(|k| k[0] == name).map_or("key.keyboard.unknown", |k| k[2]).to_owned())
+    crate::keys::binding(h, &name.replace('.', "_"))
+        .map(|(k, _)| k)
+        .unwrap_or_else(|| {
+            KEYS.iter()
+                .find(|k| k[0] == name)
+                .map_or("key.keyboard.unknown", |k| k[2])
+                .to_owned()
+        })
 }
 
 /// The key's name as Controls shows it.
 pub fn key_label(h: &dyn ClientHost, name: &str) -> String {
     let key = bound(h, name);
-    h.translate(&key).unwrap_or_else(|| key.rsplit('.').next().unwrap_or(&key).to_uppercase())
+    h.translate(&key)
+        .unwrap_or_else(|| key.rsplit('.').next().unwrap_or(&key).to_uppercase())
 }
 
 fn down(h: &dyn ClientHost, name: &str) -> bool {
@@ -49,8 +57,23 @@ fn down(h: &dyn ClientHost, name: &str) -> bool {
 fn keys(h: &dyn ClientHost) {
     // A key mapping doesn't fire under a screen (the config screens' keys are for typing and binding).
     let playing = h.playing();
-    let profiles: &[&'static str] = if on(h, "enable_profiles") { &["profile.0", "profile.1", "profile.2", "profile.3"] } else { &[] };
-    let pressed: Vec<&'static str> = ["config", "show_overlay", "toggle_liquid", "show_recipes", "show_uses", "narrate"].into_iter().chain(profiles.iter().copied()).filter(|n| playing && down(h, n)).collect();
+    let profiles: &[&'static str] = if on(h, "enable_profiles") {
+        &["profile.0", "profile.1", "profile.2", "profile.3"]
+    } else {
+        &[]
+    };
+    let pressed: Vec<&'static str> = [
+        "config",
+        "show_overlay",
+        "toggle_liquid",
+        "show_recipes",
+        "show_uses",
+        "narrate",
+    ]
+    .into_iter()
+    .chain(profiles.iter().copied())
+    .filter(|n| playing && down(h, n))
+    .collect();
     let toggle = opt(h, "display_mode") != "hold";
     let tts_toggle = opt(h, "tts_mode") == "toggle";
     let hold = down(h, "show_overlay");
@@ -64,14 +87,22 @@ fn keys(h: &dyn ClientHost) {
             match *name {
                 "show_overlay" if toggle => {
                     c.hidden = !c.hidden;
-                    c.say = Some(if c.hidden { tr(h, "narration.jade.key.show_overlay.off", "Overlay hidden") } else { tr(h, "narration.jade.key.show_overlay.on", "Overlay shown") });
+                    c.say = Some(if c.hidden {
+                        tr(h, "narration.jade.key.show_overlay.off", "Overlay hidden")
+                    } else {
+                        tr(h, "narration.jade.key.show_overlay.on", "Overlay shown")
+                    });
                     if c.hidden {
                         c.hint = Some(0);
                     }
                 }
                 "toggle_liquid" => {
                     c.liquids = !c.liquids;
-                    c.say = Some(if c.liquids { tr(h, "narration.jade.key.toggle_liquid.on", "Fluid shown") } else { tr(h, "narration.jade.key.toggle_liquid.off", "Fluid hidden") });
+                    c.say = Some(if c.liquids {
+                        tr(h, "narration.jade.key.toggle_liquid.on", "Fluid shown")
+                    } else {
+                        tr(h, "narration.jade.key.toggle_liquid.off", "Fluid hidden")
+                    });
                 }
                 "narrate" if tts_toggle => {
                     c.tts_on = !c.tts_on;
@@ -111,7 +142,10 @@ pub fn tick(h: &mut dyn ClientHost) {
     // Narrate Key Binds (the key's new state) and Narrate Target (the box), said by the game's narrator. Java Jade
     // checks `narrator.isActive()` (true for All, Chat, and System; silent when Off); Sunrise's `ClientHost::narrate`
     // (`saySystemNow`) only differs for `Chat only`, where it returns `NarrateError::Off`.
-    for text in [with(|c| c.say.take()), with(|c| c.speak.take())].into_iter().flatten() {
+    for text in [with(|c| c.say.take()), with(|c| c.speak.take())]
+        .into_iter()
+        .flatten()
+    {
         let _ = h.narrate(&Text::literal(text), Narration::Now);
     }
     if let Some(n) = with(|c| c.use_profile.take()) {
@@ -121,9 +155,21 @@ pub fn tick(h: &mut dyn ClientHost) {
     // Jade.history()'s hints, once each: toast.jade.toggle_hint and toast.jade.tts_hint.
     if let Some(which) = with(|c| c.hint.take()) {
         let (flag, key_name, kind, first, second) = if which == 0 {
-            ("hint_overlay_toggle", "show_overlay", "jade:toggle_hint", tr(h, "toast.jade.toggle_hint.1", "Jade is now closed"), tr(h, "toast.jade.toggle_hint.2", "Press %s again to reopen"))
+            (
+                "hint_overlay_toggle",
+                "show_overlay",
+                "jade:toggle_hint",
+                tr(h, "toast.jade.toggle_hint.1", "Jade is now closed"),
+                tr(h, "toast.jade.toggle_hint.2", "Press %s again to reopen"),
+            )
         } else {
-            ("hint_narrator_toggle", "narrate", "jade:tts_hint", tr(h, "toast.jade.tts_hint.1", "Jade's narrator is now open"), tr(h, "toast.jade.tts_hint.2", "Press %s again to disable"))
+            (
+                "hint_narrator_toggle",
+                "narrate",
+                "jade:tts_hint",
+                tr(h, "toast.jade.tts_hint.1", "Jade's narrator is now open"),
+                tr(h, "toast.jade.tts_hint.2", "Press %s again to disable"),
+            )
         };
         if opt(h, flag) != "shown" {
             opts::set(h, flag, "shown");
@@ -162,7 +208,12 @@ fn sync_settings(h: &mut dyn ClientHost) {
         return;
     }
     let msg = format!("s {}", opts::values_for_server(h));
-    if h.send_payload_to_server(&PayloadId(NET_REQUEST.into()), PayloadBytes(msg.into_bytes())).is_ok() {
+    if h.send_payload_to_server(
+        &PayloadId(NET_REQUEST.into()),
+        PayloadBytes(msg.into_bytes()),
+    )
+    .is_ok()
+    {
         with(|c| c.sent_epoch = epoch);
     }
 }
@@ -173,11 +224,23 @@ fn request(h: &mut dyn ClientHost) {
     if !with(|c| c.active) {
         return;
     }
-    let seen = with(|c| c.seen.clone()).unwrap_or(Seen::Entity { id: u32::MAX, point: [0.0; 3], dist: f64::INFINITY });
+    let seen = with(|c| c.seen.clone()).unwrap_or(Seen::Entity {
+        id: u32::MAX,
+        point: [0.0; 3],
+        dist: f64::INFINITY,
+    });
     let details = u8::from(with(|c| c.details));
     let extra = opts::num(h, "reach_distance").clamp(0.0, 20.0);
     let (key, msg) = match &seen {
-        Seen::Block { pos, block, real, state, hit, dist, face } => {
+        Seen::Block {
+            pos,
+            block,
+            real,
+            state,
+            hit,
+            dist,
+            face,
+        } => {
             // Not for what passes for another block without its block entity (builtInOverrides).
             if block != real && !real.contains("chest") {
                 return;
@@ -185,9 +248,19 @@ fn request(h: &mut dyn ClientHost) {
             let slot = overlay::shelf_slot(*pos, real, state, *hit, *face);
             let key = format!("b {} {} {} {details} {slot}", pos[0], pos[1], pos[2]);
             let h4 = hit.map(|v| (v * 4096.0).round() as i64);
-            (key.clone(), format!("{key} {} {} {} {extra} {dist}", h4[0], h4[1], h4[2]))
+            (
+                key.clone(),
+                format!("{key} {} {} {} {extra} {dist}", h4[0], h4[1], h4[2]),
+            )
         }
-        Seen::Entity { id, .. } if *id != u32::MAX && !with(|c| c.entity_data.as_ref().is_some_and(|d| d.id == *id && d.picked)) => {
+        Seen::Entity { id, .. }
+            if *id != u32::MAX
+                && !with(|c| {
+                    c.entity_data
+                        .as_ref()
+                        .is_some_and(|d| d.id == *id && d.picked)
+                }) =>
+        {
             let key = format!("e {id} {details}");
             (key.clone(), key)
         }
@@ -196,8 +269,18 @@ fn request(h: &mut dyn ClientHost) {
             (key.clone(), key)
         }
     };
-    let due = with(|c| c.asked.as_ref().is_none_or(|(k, at)| *k != key || at.elapsed().as_millis() >= 250));
-    if due && h.send_payload_to_server(&PayloadId(NET_REQUEST.into()), PayloadBytes(msg.into_bytes())).is_ok() {
+    let due = with(|c| {
+        c.asked
+            .as_ref()
+            .is_none_or(|(k, at)| *k != key || at.elapsed().as_millis() >= 250)
+    });
+    if due
+        && h.send_payload_to_server(
+            &PayloadId(NET_REQUEST.into()),
+            PayloadBytes(msg.into_bytes()),
+        )
+        .is_ok()
+    {
         with(|c| c.asked = Some((key, Instant::now())));
     }
 }
@@ -232,7 +315,9 @@ pub fn from_server(data: &[u8]) {
             [id, picked, dist, kind, proj] => (id, picked, dist, kind, *proj == "1"),
             _ => return,
         };
-        let (Ok(id), Ok(dist)) = (id.parse::<u32>(), dist.parse::<f64>()) else { return };
+        let (Ok(id), Ok(dist)) = (id.parse::<u32>(), dist.parse::<f64>()) else {
+            return;
+        };
         let name = it.next().unwrap_or("").to_owned();
         let icon_raw = it.next().unwrap_or("");
         let (icon, icon_components) = match icon_raw.split_once(' ') {
@@ -240,7 +325,20 @@ pub fn from_server(data: &[u8]) {
             None => (icon_raw.to_owned(), None),
         };
         let lines: Vec<String> = it.take(256).map(str::to_owned).collect();
-        with(|c| c.entity_data = Some(EntityData { id, kind: (*kind).to_owned(), name, icon, icon_components, lines, picked: *picked == "1", projectile, dist, at: Instant::now() }));
+        with(|c| {
+            c.entity_data = Some(EntityData {
+                id,
+                kind: (*kind).to_owned(),
+                name,
+                icon,
+                icon_components,
+                lines,
+                picked: *picked == "1",
+                projectile,
+                dist,
+                at: Instant::now(),
+            })
+        });
         return;
     }
     if let Some(rest) = head.strip_prefix("B ") {
@@ -270,18 +368,31 @@ pub fn logged_out() {
 
 /// JadeClientCommand's usages, for completion and the client's own dispatch.
 pub fn register_client_commands(e: &mut RegisterClientCommandsEvent<'_>) {
-    for usage in ["jadec config", "jadec pin", "jadec handlers", "jadec use_profile <profile:integer>", "jadec generate_server_overrides", "jadec generate_server_overrides <pattern:text>"] {
-        e.commands.push(Command::new(usage));
+    for usage in [
+        "jadec",
+        "jadec config",
+        "jadec pin",
+        "jadec handlers",
+        "jadec use_profile <profile:integer>",
+        "jadec generate_server_overrides",
+        "jadec generate_server_overrides <pattern:text>",
+    ] {
+        e.commands
+            .push(Command::new(usage).executes_client(command));
     }
 }
 
-/// `/jadec ...` on the player's own client.
-pub fn command(h: &mut dyn ClientHost, line: &str) -> Flow {
-    let mut words = line.trim_start_matches('/').split_whitespace();
-    if words.next() != Some("jadec") {
-        return Flow::Continue;
+/// `/jadec ...` on the player's own client: the usage's words, then its arguments as typed.
+fn command(h: &mut dyn ClientHost, invocation: &CommandInvocation) -> Option<i32> {
+    let mut words: Vec<String> = invocation.literals.iter().skip(1).cloned().collect();
+    for argument in &invocation.arguments {
+        match &argument.value {
+            CommandArgumentValue::String(s) => words.push(s.clone()),
+            CommandArgumentValue::Integer(n) => words.push(n.to_string()),
+            _ => {}
+        }
     }
-    let args: Vec<&str> = words.collect();
+    let args: Vec<&str> = words.iter().map(String::as_str).collect();
     let say = |h: &mut dyn ClientHost, t: String| {
         let _ = h.chat_line(Text::literal(t));
     };
@@ -306,5 +417,5 @@ pub fn command(h: &mut dyn ClientHost, line: &str) -> Flow {
         }
         _ => say(h, "/jadec config | use_profile <0-3> | pin | handlers | generate_server_overrides [pattern]".to_owned()),
     }
-    Flow::Cancel
+    Some(1)
 }

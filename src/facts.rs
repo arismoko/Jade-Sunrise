@@ -37,7 +37,10 @@ pub(crate) fn fact(h: &dyn Host, block: &str) -> Option<Fact> {
     if let Some(f) = FACTS.with_borrow(|m| m.get(block).copied()) {
         return Some(f);
     }
-    let state = h.block_state_id(block).map(|s| s.block()).and_then(|k| h.block_state_default(k))?;
+    let state = h
+        .block_state_id(block)
+        .map(|s| s.block())
+        .and_then(|k| h.block_state_default(k))?;
     let states = h.block_states();
     let f = Fact {
         hardness: states.destroy_speed(state)?,
@@ -94,8 +97,18 @@ pub(crate) fn loot_table_loaded(id: &str, table: &Value) {
 
 fn scan_table(table: &Value) -> TableScan {
     let mut out = TableScan::default();
-    for pool in table.get("pools").and_then(Value::as_array).into_iter().flatten() {
-        for entry in pool.get("entries").and_then(Value::as_array).into_iter().flatten() {
+    for pool in table
+        .get("pools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        for entry in pool
+            .get("entries")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             scan_entry(entry, &mut out, 0);
         }
     }
@@ -107,13 +120,26 @@ fn scan_entry(entry: &Value, out: &mut TableScan, depth: u32) {
     if depth > 16 {
         return;
     }
-    for c in entry.get("conditions").and_then(Value::as_array).into_iter().flatten() {
+    for c in entry
+        .get("conditions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         scan_condition(c, out, depth + 1);
     }
-    let kind = entry.get("type").and_then(Value::as_str).unwrap_or_default();
+    let kind = entry
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     match kind.strip_prefix("minecraft:").unwrap_or(kind) {
         "alternatives" => {
-            for child in entry.get("children").and_then(Value::as_array).into_iter().flatten() {
+            for child in entry
+                .get("children")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 scan_entry(child, out, depth + 1);
             }
         }
@@ -135,7 +161,10 @@ fn scan_condition(c: &Value, out: &mut TableScan, depth: u32) {
     if depth > 16 {
         return;
     }
-    let kind = c.get("condition").and_then(Value::as_str).unwrap_or_default();
+    let kind = c
+        .get("condition")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     match kind.strip_prefix("minecraft:").unwrap_or(kind) {
         "match_tool" => {
             if let Some(spec) = c.get("predicate").map_or(Some(Spec::Any), shears_spec) {
@@ -143,7 +172,12 @@ fn scan_condition(c: &Value, out: &mut TableScan, depth: u32) {
             }
         }
         "any_of" => {
-            for t in c.get("terms").and_then(Value::as_array).into_iter().flatten() {
+            for t in c
+                .get("terms")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 scan_condition(t, out, depth + 1);
             }
         }
@@ -161,7 +195,14 @@ fn shears_spec(p: &Value) -> Option<Spec> {
             "count" => {
                 let one = match v {
                     Value::Number(n) => n.as_f64() == Some(1.0),
-                    Value::Object(r) => r.get("min").and_then(Value::as_f64).is_none_or(|m| m <= 1.0) && r.get("max").and_then(Value::as_f64).is_none_or(|m| m >= 1.0),
+                    Value::Object(r) => {
+                        r.get("min")
+                            .and_then(Value::as_f64)
+                            .is_none_or(|m| m <= 1.0)
+                            && r.get("max")
+                                .and_then(Value::as_f64)
+                                .is_none_or(|m| m >= 1.0)
+                    }
                     _ => false,
                 };
                 if !one {
@@ -177,13 +218,21 @@ fn shears_spec(p: &Value) -> Option<Spec> {
             Some(tag) => Some(Spec::Tag(tag.to_owned())),
             None => (full(s) == SHEARS).then_some(Spec::Any),
         },
-        Some(Value::Array(ids)) => ids.iter().filter_map(Value::as_str).any(|s| full(s) == SHEARS).then_some(Spec::Any),
+        Some(Value::Array(ids)) => ids
+            .iter()
+            .filter_map(Value::as_str)
+            .any(|s| full(s) == SHEARS)
+            .then_some(Spec::Any),
         _ => None,
     }
 }
 
 fn full(id: &str) -> String {
-    if id.contains(':') { id.to_owned() } else { format!("minecraft:{id}") }
+    if id.contains(':') {
+        id.to_owned()
+    } else {
+        format!("minecraft:{id}")
+    }
 }
 
 /// The server's answer naming the blocks shears harvest: `h <block> <block>...`, the blocks whose `<ns>:blocks/<path>`
@@ -191,20 +240,36 @@ fn full(id: &str) -> String {
 pub(crate) fn shears_message(host: &dyn Host) -> String {
     let guard = SERVER.lock().unwrap_or_else(|e| e.into_inner());
     let tables = guard.as_ref().map(|s| &s.tables);
-    let shears = Identifier::parse(SHEARS).ok().and_then(|id| host.item_key(&id));
+    let shears = Identifier::parse(SHEARS)
+        .ok()
+        .and_then(|id| host.item_key(&id));
     let tags = host.tags();
     let pass = |s: &Spec| match s {
         Spec::Any => true,
-        Spec::Tag(t) => shears.zip(Identifier::parse(&full(t)).ok().and_then(|id| tags.key(&id))).and_then(|(k, tag)| tags.is_in_tag(k, tag)) == Some(true),
+        Spec::Tag(t) => {
+            shears
+                .zip(
+                    Identifier::parse(&full(t))
+                        .ok()
+                        .and_then(|id| tags.key(&id)),
+                )
+                .and_then(|(k, tag)| tags.is_in_tag(k, tag))
+                == Some(true)
+        }
     };
     let mut memo: HashMap<String, bool> = HashMap::new();
     let mut blocks: Vec<String> = Vec::new();
     if let Some(tables) = tables {
         for id in tables.keys() {
-            let Some((ns, path)) = id.split_once(':') else { continue };
-            let Some(block) = path.strip_prefix("blocks/") else { continue };
+            let Some((ns, path)) = id.split_once(':') else {
+                continue;
+            };
+            let Some(block) = path.strip_prefix("blocks/") else {
+                continue;
+            };
             let block = format!("{ns}:{block}");
-            if host.block_state_id(&block).is_some() && asks_shears(tables, id, &pass, &mut memo, 0) {
+            if host.block_state_id(&block).is_some() && asks_shears(tables, id, &pass, &mut memo, 0)
+            {
                 blocks.push(block);
             }
         }
@@ -215,14 +280,25 @@ pub(crate) fn shears_message(host: &dyn Host) -> String {
     format!("h {}", blocks.join(" "))
 }
 
-fn asks_shears(tables: &HashMap<String, TableScan>, id: &str, pass: &dyn Fn(&Spec) -> bool, memo: &mut HashMap<String, bool>, depth: u32) -> bool {
+fn asks_shears(
+    tables: &HashMap<String, TableScan>,
+    id: &str,
+    pass: &dyn Fn(&Spec) -> bool,
+    memo: &mut HashMap<String, bool>,
+    depth: u32,
+) -> bool {
     if let Some(&b) = memo.get(id) {
         return b;
     }
     // Cut cycles: a table being judged counts as no for itself.
     memo.insert(id.to_owned(), false);
     let b = depth < 16
-        && tables.get(id).is_some_and(|t| t.specs.iter().any(pass) || t.nested.iter().any(|n| asks_shears(tables, &full(n), pass, memo, depth + 1)));
+        && tables.get(id).is_some_and(|t| {
+            t.specs.iter().any(pass)
+                || t.nested
+                    .iter()
+                    .any(|n| asks_shears(tables, &full(n), pass, memo, depth + 1))
+        });
     memo.insert(id.to_owned(), b);
     b
 }
@@ -232,7 +308,12 @@ static CLIENT: Mutex<(u32, Option<HashSet<String>>)> = Mutex::new((0, None));
 
 /// The client took a `h ...` answer.
 pub(crate) fn shears_received(rest: &str) {
-    let set: HashSet<String> = rest.split(' ').filter(|s| !s.is_empty()).take(1 << 16).map(str::to_owned).collect();
+    let set: HashSet<String> = rest
+        .split(' ')
+        .filter(|s| !s.is_empty())
+        .take(1 << 16)
+        .map(str::to_owned)
+        .collect();
     let mut c = CLIENT.lock().unwrap_or_else(|e| e.into_inner());
     c.0 = c.0.wrapping_add(1);
     c.1 = Some(set);
@@ -306,10 +387,28 @@ mod tests {
         assert_eq!(s.specs, vec![Spec::Tag("c:tools/shear".into())]);
         assert_eq!(s.nested, vec!["mymod:blocks/shared".to_owned()]);
         let mut tables = HashMap::new();
-        tables.insert("mymod:blocks/a".to_owned(), TableScan { specs: vec![], nested: vec!["mymod:blocks/b".into()] });
-        tables.insert("mymod:blocks/b".to_owned(), TableScan { specs: vec![Spec::Any], nested: vec!["mymod:blocks/a".into()] });
+        tables.insert(
+            "mymod:blocks/a".to_owned(),
+            TableScan {
+                specs: vec![],
+                nested: vec!["mymod:blocks/b".into()],
+            },
+        );
+        tables.insert(
+            "mymod:blocks/b".to_owned(),
+            TableScan {
+                specs: vec![Spec::Any],
+                nested: vec!["mymod:blocks/a".into()],
+            },
+        );
         let mut memo = HashMap::new();
-        assert!(asks_shears(&tables, "mymod:blocks/a", &|s| *s == Spec::Any, &mut memo, 0));
+        assert!(asks_shears(
+            &tables,
+            "mymod:blocks/a",
+            &|s| *s == Spec::Any,
+            &mut memo,
+            0
+        ));
     }
 
     #[test]
