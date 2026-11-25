@@ -19,5 +19,5 @@ guideme = { version = "^0.1", optional = true }
 [native]
 game = "26.3"
 # Pinned to Sunrise Dev 1 (dev-2026-11-25-bdad86d).
-sunrise = "bdad86d2d398ff9293002d2dc08702822aea7265"
+sunrise = "6a02076f89cd189d74d63492dda5b023fa85a38f"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
