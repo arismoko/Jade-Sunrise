@@ -28,18 +28,39 @@ pub enum El {
     /// Text, `§` codes and `§#RRGGBB` colours allowed, [`tr`] markers resolved on the client.
     Text(String),
     /// An item's icon: `small` at half size (JadeUI.smallItem), else 16 with its count.
-    Item { id: String, count: u32, small: bool },
+    Item {
+        id: String,
+        count: u32,
+        small: bool,
+    },
     /// An item's icon with its component patch (glint, dyed colour, head skin, trims, sherds).
-    Stack { id: String, count: u32, small: bool, components: Compound },
+    Stack {
+        id: String,
+        count: u32,
+        small: bool,
+        components: Compound,
+    },
     /// The progress arrow (JadeUI.progressArrow), 0 to 1.
     Arrow(f32),
     /// A progress bar (energy, ProgressView), 0 to 1, its colour `0xRRGGBB` and the text on it.
-    Bar { frac: f32, color: u32, text: String },
+    Bar {
+        frac: f32,
+        color: u32,
+        text: String,
+    },
     /// A fluid icon drawn via `DrawContext::fluid`.
     Fluid(String),
     /// A fluid progress bar filled with the fluid's own look (`DrawContext::fluid`).
-    FluidBar { fluid: String, frac: f32, text: String },
-    Hearts { health: f32, max: f32, absorb: f32 },
+    FluidBar {
+        fluid: String,
+        frac: f32,
+        text: String,
+    },
+    Hearts {
+        health: f32,
+        max: f32,
+        absorb: f32,
+    },
     Armor(f32),
     Space(f32),
     /// Jade's energy icon (`jade:energy`).
@@ -49,13 +70,19 @@ pub enum El {
     /// Not drawn: the box's icon becomes this item (IComponentProvider.getIcon).
     Icon(String),
     /// Not drawn: the box's icon becomes this stack with its component patch.
-    StackIcon { id: String, components: Compound },
+    StackIcon {
+        id: String,
+        components: Compound,
+    },
     /// Not drawn: a honeycomb over the icon (WaxedProvider.waxedIcon).
     Badge,
     /// Not drawn: the title with `{0}` as what it is now (ITooltip.replace(CORE_OBJECT_NAME, ...)).
     Title(String),
     /// Not drawn: EntityHealthAndArmorProvider's absorption and armour from the server.
-    Stats { absorb: f32, armor: f32 },
+    Stats {
+        absorb: f32,
+        armor: f32,
+    },
     /// Not drawn: RegistryNameProvider.ForEntity special registry line (gated on `registry_name` + `registry_special`).
     SpecialId(String),
 }
@@ -69,7 +96,9 @@ pub struct Line {
 impl Line {
     /// A line of text.
     pub fn text(t: impl Into<String>) -> Self {
-        Self { els: vec![El::Text(t.into())] }
+        Self {
+            els: vec![El::Text(t.into())],
+        }
     }
     pub fn new() -> Self {
         Self::default()
@@ -81,30 +110,51 @@ impl Line {
     }
     /// An item's icon with its count.
     pub fn item(id: &str, count: u32) -> El {
-        El::Item { id: id.to_owned(), count, small: false }
+        El::Item {
+            id: id.to_owned(),
+            count,
+            small: false,
+        }
     }
     /// An item's small icon (JadeUI.smallItem).
     pub fn small(id: &str) -> El {
-        El::Item { id: id.to_owned(), count: 1, small: true }
+        El::Item {
+            id: id.to_owned(),
+            count: 1,
+            small: true,
+        }
     }
     /// An item's icon with optional component patch.
     pub fn item_with(id: &str, count: u32, components: Option<Compound>) -> El {
         match components.filter(|c| !c.is_empty()) {
-            Some(components) => El::Stack { id: id.to_owned(), count, small: false, components },
+            Some(components) => El::Stack {
+                id: id.to_owned(),
+                count,
+                small: false,
+                components,
+            },
             None => Self::item(id, count),
         }
     }
     /// An item's small icon with optional component patch.
     pub fn small_with(id: &str, components: Option<Compound>) -> El {
         match components.filter(|c| !c.is_empty()) {
-            Some(components) => El::Stack { id: id.to_owned(), count: 1, small: true, components },
+            Some(components) => El::Stack {
+                id: id.to_owned(),
+                count: 1,
+                small: true,
+                components,
+            },
             None => Self::small(id),
         }
     }
     /// Box icon directive with optional component patch.
     pub fn icon_with(id: &str, components: Option<Compound>) -> El {
         match components.filter(|c| !c.is_empty()) {
-            Some(components) => El::StackIcon { id: id.to_owned(), components },
+            Some(components) => El::StackIcon {
+                id: id.to_owned(),
+                components,
+            },
             None => El::Icon(id.to_owned()),
         }
     }
@@ -142,9 +192,15 @@ pub(crate) fn decode_components(hex: &str) -> Option<Compound> {
 }
 
 pub(crate) fn stack_components(stack: &ItemStack) -> Option<Compound> {
-    let mut patch = stack.components().map(|c| c.as_nbt().clone()).unwrap_or_default();
+    let mut patch = stack
+        .components()
+        .map(|c| c.as_nbt().clone())
+        .unwrap_or_default();
     if let Some(damage) = stack.damage_component() {
-        patch.insert(JavaString::from("minecraft:damage"), Tag::Int(damage as i32));
+        patch.insert(
+            JavaString::from("minecraft:damage"),
+            Tag::Int(damage as i32),
+        );
     }
     (!patch.is_empty()).then_some(patch)
 }
@@ -172,15 +228,26 @@ pub fn encode(line: &Line) -> String {
             El::Stats { absorb, armor } => format!("{CMD}S {absorb} {armor}"),
             El::SpecialId(t) => format!("{CMD}R {}", clean(t)),
             El::Item { id, count, small } => format!("{CMD}i {id} {count} {}", u8::from(*small)),
-            El::Stack { id, count, small, components } => match encode_components(components) {
+            El::Stack {
+                id,
+                count,
+                small,
+                components,
+            } => match encode_components(components) {
                 Some(hex) => format!("{CMD}j {id} {count} {} {hex}", u8::from(*small)),
                 None => format!("{CMD}i {id} {count} {}", u8::from(*small)),
             },
             El::Arrow(f) => format!("{CMD}a {f}"),
             El::Bar { frac, color, text } => format!("{CMD}b {frac} {color} {}", clean(text)),
             El::Fluid(f) => format!("{CMD}f {}", clean(f)),
-            El::FluidBar { fluid, frac, text } => format!("{CMD}F {frac} {} {}", clean(fluid), clean(text)),
-            El::Hearts { health, max, absorb } => format!("{CMD}h {health} {max} {absorb}"),
+            El::FluidBar { fluid, frac, text } => {
+                format!("{CMD}F {frac} {} {}", clean(fluid), clean(text))
+            }
+            El::Hearts {
+                health,
+                max,
+                absorb,
+            } => format!("{CMD}h {health} {max} {absorb}"),
             El::Armor(a) => format!("{CMD}r {a}"),
             El::Space(w) => format!("{CMD}s {w}"),
             El::Energy => format!("{CMD}e"),
@@ -200,7 +267,12 @@ pub fn decode(s: &str) -> Line {
             continue;
         };
         let w: Vec<&str> = cmd.splitn(4, ' ').collect();
-        let f = |i: usize| w.get(i).and_then(|v| v.parse::<f32>().ok()).filter(|v| v.is_finite()).unwrap_or(0.0);
+        let f = |i: usize| {
+            w.get(i)
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| v.is_finite())
+                .unwrap_or(0.0)
+        };
         let rest = || cmd.get(2..).unwrap_or("").to_owned();
         match w.first().copied() {
             Some("i") => line.els.push(El::Item {
@@ -214,21 +286,40 @@ pub fn decode(s: &str) -> Line {
                 let count = p.get(2).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
                 let small = p.get(3) == Some(&"1");
                 match p.get(4).and_then(|hex| decode_components(hex)) {
-                    Some(components) => line.els.push(El::Stack { id, count, small, components }),
+                    Some(components) => line.els.push(El::Stack {
+                        id,
+                        count,
+                        small,
+                        components,
+                    }),
                     None => line.els.push(El::Item { id, count, small }),
                 }
             }
             Some("a") => line.els.push(El::Arrow(f(1))),
-            Some("b") => line.els.push(El::Bar { frac: f(1), color: f(2) as u32, text: w.get(3).copied().unwrap_or("").to_owned() }),
+            Some("b") => line.els.push(El::Bar {
+                frac: f(1),
+                color: f(2) as u32,
+                text: w.get(3).copied().unwrap_or("").to_owned(),
+            }),
             Some("f") => line.els.push(El::Fluid(rest())),
-            Some("F") => line.els.push(El::FluidBar { fluid: w.get(2).copied().unwrap_or("").to_owned(), frac: f(1), text: w.get(3).copied().unwrap_or("").to_owned() }),
-            Some("h") => line.els.push(El::Hearts { health: f(1), max: f(2), absorb: f(3) }),
+            Some("F") => line.els.push(El::FluidBar {
+                fluid: w.get(2).copied().unwrap_or("").to_owned(),
+                frac: f(1),
+                text: w.get(3).copied().unwrap_or("").to_owned(),
+            }),
+            Some("h") => line.els.push(El::Hearts {
+                health: f(1),
+                max: f(2),
+                absorb: f(3),
+            }),
             Some("r") => line.els.push(El::Armor(f(1))),
             Some("s") => line.els.push(El::Space(f(1).clamp(0.0, 200.0))),
             Some("e") => line.els.push(El::Energy),
             Some("m") => line.els.push(El::Small(rest())),
             Some("k") => line.els.push(El::Mark(rest())),
-            Some("I") => line.els.push(El::Icon(w.get(1).copied().unwrap_or("minecraft:air").to_owned())),
+            Some("I") => line.els.push(El::Icon(
+                w.get(1).copied().unwrap_or("minecraft:air").to_owned(),
+            )),
             Some("J") => {
                 let id = w.get(1).copied().unwrap_or("minecraft:air").to_owned();
                 match w.get(2).and_then(|hex| decode_components(hex)) {
@@ -238,7 +329,10 @@ pub fn decode(s: &str) -> Line {
             }
             Some("W") => line.els.push(El::Badge),
             Some("T") => line.els.push(El::Title(rest())),
-            Some("S") => line.els.push(El::Stats { absorb: f(1), armor: f(2) }),
+            Some("S") => line.els.push(El::Stats {
+                absorb: f(1),
+                armor: f(2),
+            }),
             Some("R") => line.els.push(El::SpecialId(rest())),
             _ => {}
         }
@@ -308,7 +402,12 @@ pub fn fluid_name(id: &str) -> String {
 pub enum Target {
     /// A block (or a fluid): its position, its id (`minecraft:chest`; what it passes for under Jade's built-in
     /// camouflage), its state as `minecraft:chest[facing=north,...]`, and where the crosshair meets it.
-    Block { pos: [i32; 3], block: String, state: String, hit: [f64; 3] },
+    Block {
+        pos: [i32; 3],
+        block: String,
+        state: String,
+        hit: [f64; 3],
+    },
     /// An entity: its network id and type (`minecraft:zombie`), once the server has said what it is.
     Entity { id: u32, kind: String },
 }
@@ -486,17 +585,35 @@ mod tests {
         let mut comp = Compound::new();
         comp.insert(JavaString::from("minecraft:damage"), Tag::Int(7));
         let line = Line::new()
-            .with(El::Stack { id: "minecraft:diamond_pickaxe".into(), count: 1, small: true, components: comp.clone() })
-            .with(El::StackIcon { id: "minecraft:player_head".into(), components: comp.clone() })
+            .with(El::Stack {
+                id: "minecraft:diamond_pickaxe".into(),
+                count: 1,
+                small: true,
+                components: comp.clone(),
+            })
+            .with(El::StackIcon {
+                id: "minecraft:player_head".into(),
+                components: comp.clone(),
+            })
             .with(El::Fluid("minecraft:water".into()))
-            .with(El::FluidBar { fluid: "minecraft:lava".into(), frac: 0.5, text: "Lava 500mB".into() })
+            .with(El::FluidBar {
+                fluid: "minecraft:lava".into(),
+                frac: 0.5,
+                text: "Lava 500mB".into(),
+            })
             .with(El::SpecialId("Painting: minecraft:kebab".into()));
         let decoded = decode(&encode(&line));
         assert_eq!(decoded.els.len(), 5);
-        assert!(matches!(&decoded.els[0], El::Stack { id, count: 1, small: true, components } if id == "minecraft:diamond_pickaxe" && components == &comp));
-        assert!(matches!(&decoded.els[1], El::StackIcon { id, components } if id == "minecraft:player_head" && components == &comp));
+        assert!(
+            matches!(&decoded.els[0], El::Stack { id, count: 1, small: true, components } if id == "minecraft:diamond_pickaxe" && components == &comp)
+        );
+        assert!(
+            matches!(&decoded.els[1], El::StackIcon { id, components } if id == "minecraft:player_head" && components == &comp)
+        );
         assert!(matches!(&decoded.els[2], El::Fluid(f) if f == "minecraft:water"));
-        assert!(matches!(&decoded.els[3], El::FluidBar { fluid, frac, text } if fluid == "minecraft:lava" && (*frac - 0.5).abs() < 1e-6 && text == "Lava 500mB"));
+        assert!(
+            matches!(&decoded.els[3], El::FluidBar { fluid, frac, text } if fluid == "minecraft:lava" && (*frac - 0.5).abs() < 1e-6 && text == "Lava 500mB")
+        );
         assert!(matches!(&decoded.els[4], El::SpecialId(s) if s == "Painting: minecraft:kebab"));
     }
 }

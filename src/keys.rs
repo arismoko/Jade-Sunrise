@@ -42,7 +42,9 @@ pub(crate) fn tick(host: &mut dyn ClientHost) {
         let mut result = Err(ModKeyRefusal::Stale);
         for _ in 0..2 {
             result = mapping(&*host, &name).and_then(|m| match &op {
-                Op::Set(_, key, modifiers) => m.set_binding(host, key, ClientModifiers::new(*modifiers)),
+                Op::Set(_, key, modifiers) => {
+                    m.set_binding(host, key, ClientModifiers::new(*modifiers))
+                }
                 Op::Reset(_) => m.reset_binding(host),
             });
             if result != Err(ModKeyRefusal::Stale) {
@@ -71,13 +73,18 @@ fn mapping(host: &dyn ClientHost, name: &str) -> Result<ModKeyMappingRef, ModKey
 }
 
 fn forget(name: &str) {
-    HANDLES.lock().unwrap_or_else(|e| e.into_inner()).retain(|(n, _)| n != name);
+    HANDLES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(n, _)| n != name);
 }
 
 /// The key and modifiers Jade's mapping `name` is bound to now, as Controls has it.
 pub(crate) fn binding(host: &dyn ClientHost, name: &str) -> Option<(String, ClientModifiers)> {
     for _ in 0..2 {
-        match mapping(host, name).and_then(|m| m.binding(host).map(|(k, mods)| (k.to_owned(), mods))) {
+        match mapping(host, name)
+            .and_then(|m| m.binding(host).map(|(k, mods)| (k.to_owned(), mods)))
+        {
             Ok(b) => return Some(b),
             Err(ModKeyRefusal::Stale) => forget(name),
             Err(_) => return None,
@@ -96,14 +103,18 @@ pub(crate) fn player_list_down(host: &dyn ClientHost) -> bool {
             if let Some(m) = *slot {
                 m
             } else {
-                let Ok(m) = host.vanilla_key_mapping("key.playerlist") else { return false };
+                let Ok(m) = host.vanilla_key_mapping("key.playerlist") else {
+                    return false;
+                };
                 *slot = Some(m);
                 m
             }
         };
         match m.is_down(host) {
             Ok(down) => return down,
-            Err(MappingError::Stale) => *PLAYER_LIST.lock().unwrap_or_else(|e| e.into_inner()) = None,
+            Err(MappingError::Stale) => {
+                *PLAYER_LIST.lock().unwrap_or_else(|e| e.into_inner()) = None
+            }
             Err(_) => return false,
         }
     }
