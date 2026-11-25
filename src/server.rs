@@ -471,15 +471,19 @@ fn describe(
         String::new()
     };
     // BlockDisplayProvider and ItemDisplayProvider: what a display shows, through the displays API.
-    let shown = host.display(e).and_then(|d| match d.item(host) {
-        Some(stack) => Some((
-            stack.item().id(host).unwrap_or_default().to_owned(),
-            api::stack_components(&stack),
-        )),
-        None => d
-            .block_state(host)
-            .and_then(|s| host.block_item(s.block()))
-            .map(|i| (i.id(host).unwrap_or_default().to_owned(), None)),
+    let shown = host.display(e).and_then(|d| {
+        match d.with_item(host, |stack| {
+            (
+                stack.item().id(host).unwrap_or_default().to_owned(),
+                stack.project().and_then(|st| api::stack_components(&st)),
+            )
+        }) {
+            Some(shown) => Some(shown),
+            None => d
+                .block_state(host)
+                .and_then(|s| host.block_item(s.block()))
+                .map(|i| (i.id(host).unwrap_or_default().to_owned(), None)),
+        }
     });
     let (icon, icon_comp) = shown
         .filter(|(id, _)| id != "minecraft:air")
@@ -745,7 +749,7 @@ fn fluid_lines(
             };
             let id = res.as_ref().map(|r| match *r.fluid() {
                 FluidIdentity::Resolved(k) => k.id(host).unwrap_or_default().to_owned(),
-                FluidIdentity::Unresolved(u) => u.id(host),
+                FluidIdentity::Unresolved(ref u) => u.id().to_string(),
                 _ => String::new(),
             });
             lines.push(fluid_line(

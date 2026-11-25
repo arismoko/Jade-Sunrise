@@ -1455,7 +1455,7 @@ fn info_lines(
                         .block_state_id(&state)
                         .and_then(|bs| bs.fluid_state(&h.block_states()))
                         .filter(|fs| !fs.is_empty())
-                        && let Some(fluid) = h.fluid_key_id(fs.fluid)
+                        && let Some(fluid) = fs.fluid.id(h)
                     {
                         lines.push(Line::text(format!(
                             "§8{}",
@@ -1709,7 +1709,7 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
                             .block_state_id(state)
                             .and_then(|bs| bs.fluid_state(&h.block_states()))
                             .filter(|fs| !fs.is_empty())
-                        && let Some(fluid_id) = h.fluid_key_id(fs.fluid)
+                        && let Some(fluid_id) = fs.fluid.id(h)
                     {
                         let bucket = fs
                             .fluid
