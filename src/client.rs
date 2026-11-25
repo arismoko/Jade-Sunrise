@@ -270,18 +270,22 @@ pub fn logged_out() {
 
 /// JadeClientCommand's usages, for completion and the client's own dispatch.
 pub fn register_client_commands(e: &mut RegisterClientCommandsEvent<'_>) {
-    for usage in ["jadec config", "jadec pin", "jadec handlers", "jadec use_profile <profile:integer>", "jadec generate_server_overrides", "jadec generate_server_overrides <pattern:text>"] {
-        e.commands.push(Command::new(usage));
+    for usage in ["jadec", "jadec config", "jadec pin", "jadec handlers", "jadec use_profile <profile:integer>", "jadec generate_server_overrides", "jadec generate_server_overrides <pattern:text>"] {
+        e.commands.push(Command::new(usage).executes_client(command));
     }
 }
 
-/// `/jadec ...` on the player's own client.
-pub fn command(h: &mut dyn ClientHost, line: &str) -> Flow {
-    let mut words = line.trim_start_matches('/').split_whitespace();
-    if words.next() != Some("jadec") {
-        return Flow::Continue;
+/// `/jadec ...` on the player's own client: the usage's words, then its arguments as typed.
+fn command(h: &mut dyn ClientHost, invocation: &CommandInvocation) -> Option<i32> {
+    let mut words: Vec<String> = invocation.literals.iter().skip(1).cloned().collect();
+    for argument in &invocation.arguments {
+        match &argument.value {
+            CommandArgumentValue::String(s) => words.push(s.clone()),
+            CommandArgumentValue::Integer(n) => words.push(n.to_string()),
+            _ => {}
+        }
     }
-    let args: Vec<&str> = words.collect();
+    let args: Vec<&str> = words.iter().map(String::as_str).collect();
     let say = |h: &mut dyn ClientHost, t: String| {
         let _ = h.chat_line(Text::literal(t));
     };
@@ -306,5 +310,5 @@ pub fn command(h: &mut dyn ClientHost, line: &str) -> Flow {
         }
         _ => say(h, "/jadec config | use_profile <0-3> | pin | handlers | generate_server_overrides [pattern]".to_owned()),
     }
-    Flow::Cancel
+    Some(1)
 }

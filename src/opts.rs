@@ -40,8 +40,8 @@ fn store<R>(f: impl FnOnce(&mut Store) -> R) -> R {
     f(&mut g)
 }
 
-fn path(name: &str) -> Option<ConfigPath> {
-    ConfigPath::new(&format!("jade/{name}")).ok()
+fn path(host: &dyn Host, name: &str) -> std::path::PathBuf {
+    host.config_dir().join("jade").join(name)
 }
 
 /// A config file's JSON object, or None.
@@ -54,9 +54,9 @@ pub(crate) struct JsonObject(pub serde_json::Map<String, Value>);
 pub(crate) struct JsonRef<'a>(pub Option<&'a Value>);
 
 pub fn read_json(host: &dyn Host, name: &str) -> Option<JsonObject> {
-    let bytes = match host.config_files().read(&path(name)?) {
+    let bytes = match std::fs::read(path(host, name)) {
         Ok(b) => b,
-        Err(ConfigFileError::NotFound) => return None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         Err(e) => {
             eprintln!("jade: can't read config/jade/{name}: {e:?}");
             return None;
@@ -68,10 +68,16 @@ pub fn read_json(host: &dyn Host, name: &str) -> Option<JsonObject> {
     }
 }
 
+fn write_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, bytes)
+}
+
 pub fn write_json(host: &dyn Host, name: &str, map: &JsonObject) -> bool {
-    let Some(p) = path(name) else { return false };
     let text = serde_json::to_string_pretty(&Value::Object(map.0.clone())).unwrap_or_default();
-    match host.config_files().write(&p, text.as_bytes()) {
+    match write_file(&path(host, name), text.as_bytes()) {
         Ok(()) => true,
         Err(e) => {
             eprintln!("jade: can't write config/jade/{name}: {e:?}");
@@ -348,8 +354,7 @@ pub fn generate_overrides(host: &dyn Host, pattern: &str) -> Option<usize> {
 /// `/jadec handlers`: the options listed in `config/jade/handlers.md`.
 pub fn dump_handlers(host: &dyn Host) -> bool {
     let text: Vec<String> = OPTIONS.iter().map(|o| format!("- `{}`: {} (default {})", o.key, o.label, o.default)).collect();
-    let Some(p) = path("handlers.md") else { return false };
-    host.config_files().write(&p, text.join("\n").as_bytes()).is_ok()
+    write_file(&path(host, "handlers.md"), text.join("\n").as_bytes()).is_ok()
 }
 
 /// The options a plugin added: key, label and default, in the order they came.

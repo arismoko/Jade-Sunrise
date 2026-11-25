@@ -23,8 +23,7 @@ fn next_effect_seq() -> u64 {
 }
 
 /// `mob_effect_added`: record when an effect was added or refreshed on an entity so newest effects sort first.
-pub fn effect_added(host: &dyn Host, entity: Option<i32>, effect: EffectKey, amplifier: i32) {
-    let Some(id) = entity.and_then(|i| u32::try_from(i).ok()) else { return };
+pub fn effect_added(host: &dyn Host, id: u32, effect: EffectKey, amplifier: i32) {
     let Some(eff_id) = effect.id(host) else { return };
     let mut g = EFFECT_TIMES.lock().unwrap_or_else(|e| e.into_inner());
     let map = g.get_or_insert_with(HashMap::new);
@@ -410,16 +409,14 @@ pub fn lines(host: &mut dyn ServerHost, req: &Request, p: PlayerRef, level: Leve
         && let Some(l) = living
     {
         let limit = num(host, "effects_limit").clamp(1.0, 99.0) as usize;
-        let visible: Vec<(ActiveEffect, String)> = l
-            .effects(host)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|eff| eff.visible)
-            .map(|eff| {
+        let mut visible: Vec<(ActiveEffect, String)> = Vec::new();
+        let _ = l.visit_effects(host, &mut |eff| {
+            if eff.visible {
                 let id = eff.id.id(host).unwrap_or_default().to_owned();
-                (eff, id)
-            })
-            .collect();
+                visible.push((eff, id));
+            }
+            std::ops::ControlFlow::Continue(())
+        });
         let ordered = effect_order(e.id(), &visible);
         let shown: Vec<&(ActiveEffect, String)> = ordered.into_iter().take(limit).map(|(_, i)| &visible[i]).collect();
         let small = shown.len() > 2;

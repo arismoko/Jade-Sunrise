@@ -81,10 +81,6 @@ impl Hooks for Mod {
         client::register_client_commands(event);
     }
 
-    fn command(&self, host: &mut dyn ClientHost, event: &mut CommandEvent<'_>) -> Flow {
-        client::command(host, event.command)
-    }
-
     fn item_tooltip(&self, host: &dyn ClientHost, event: &mut ItemTooltipEvent<'_>) {
         overlay::item_tooltip(host, event);
     }
@@ -108,7 +104,7 @@ impl Hooks for Mod {
     }
 
     fn mob_effect_added(&self, host: &mut dyn ServerHost, event: &mut MobEffectAddedEvent) {
-        entities::effect_added(host, event.entity, event.effect, event.amplifier);
+        entities::effect_added(host, event.entity.id(), event.new_effect.id, event.new_effect.amplifier);
     }
 
     fn screen_render_post(&self, host: &dyn ClientHost, event: &mut ScreenRenderPostEvent<'_>) {

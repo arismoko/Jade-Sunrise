@@ -306,7 +306,7 @@ fn fluid_hit(h: &dyn ClientHost, reach: f64, from_outside: bool) -> Option<(f64,
     let level = level(h)?;
     let fluid_at = |p: [i32; 3]| -> Option<(String, String)> {
         let state = level.block_state(h, p)?;
-        let fs = h.state_fluid_state(state)?;
+        let fs = state.fluid_state(&h.block_states())?;
         if fs.is_empty() {
             return None;
         }
@@ -341,13 +341,19 @@ fn fluid_hit(h: &dyn ClientHost, reach: f64, from_outside: bool) -> Option<(f64,
     None
 }
 
+/// `BlockState.is(TagKey)` for a tag named by id; an unknown tag is not a member.
+fn block_in_tag(h: &dyn Host, block: BlockKey, tag: &str) -> bool {
+    let tags = h.tags();
+    Identifier::parse(tag).ok().and_then(|id| tags.key(&id)).and_then(|t| tags.block_in_tag(block, t)) == Some(true)
+}
+
 fn ignored_block(h: &dyn ClientHost, block: &str) -> bool {
     let (blocks, _) = opts::ignore_lists(h);
     if blocks.iter().any(|b| b == block) {
         return true;
     }
     let Some(key) = bkey(h, block) else { return false };
-    blocks.iter().filter_map(|t| t.strip_prefix('#')).any(|tag| h.block_in_tag(key, tag) == Some(true))
+    blocks.iter().filter_map(|t| t.strip_prefix('#')).any(|tag| block_in_tag(h, key, tag))
 }
 
 pub fn ignored_entity(h: &dyn ClientHost, kind: &str) -> bool {
@@ -731,7 +737,7 @@ fn vanilla_block(h: &dyn ClientHost, pos: [i32; 3], block: &str, real: &str, sta
                 }
                 for dy in 0..=1 {
                     let mid = [pos[0] + dx / 2, pos[1] + dy, pos[2] + dz / 2];
-                    if !level.block(h, mid).is_some_and(|b| h.block_in_tag(b, "minecraft:enchantment_power_transmitter") == Some(true)) {
+                    if !level.block(h, mid).is_some_and(|b| block_in_tag(h, b, "minecraft:enchantment_power_transmitter")) {
                         continue;
                     }
                     let shelf = [pos[0] + dx, pos[1] + dy, pos[2] + dz];
@@ -915,8 +921,8 @@ fn info_lines(h: &dyn ClientHost, seen: &Seen, kind: Option<&str>, special_ids: 
                             lines.push(Line::text(format!("§8{}", trf(h, "config.jade.plugin_jade.registry_name.special.block_entity_type", "BlockEntity: %s", &[id]))));
                         }
                     }
-                    if let Some(fs) = h.block_state_id(&state).and_then(|bs| h.state_fluid_state(bs)).filter(|fs| !fs.is_empty())
-                        && let Some(fluid) = fs.fluid.id(h)
+                    if let Some(fs) = h.block_state_id(&state).and_then(|bs| bs.fluid_state(&h.block_states())).filter(|fs| !fs.is_empty())
+                        && let Some(fluid) = h.fluid_key_id(fs.fluid)
                     {
                         lines.push(Line::text(format!("§8{}", trf(h, "config.jade.plugin_jade.registry_name.special.fluid", "Fluid: %s", &[fluid]))));
                     }
@@ -1109,10 +1115,10 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
                 None => {
                     let item = block_item(h, block);
                     if item.is_none()
-                        && let Some(fs) = h.block_state_id(state).and_then(|bs| h.state_fluid_state(bs)).filter(|fs| !fs.is_empty())
-                        && let Some(fluid_id) = fs.fluid.id(h)
+                        && let Some(fs) = h.block_state_id(state).and_then(|bs| bs.fluid_state(&h.block_states())).filter(|fs| !fs.is_empty())
+                        && let Some(fluid_id) = h.fluid_key_id(fs.fluid)
                     {
-                        let bucket = h.fluid_bucket(fluid_id).and_then(|k| k.id(h).map(str::to_owned));
+                        let bucket = fs.fluid.bucket(&h.block_states()).and_then(|k| k.id(h).map(str::to_owned));
                         let ns = fluid_id.split_once(':').map_or("minecraft", |(n, _)| n).to_owned();
                         let name = h
                             .fluid_states()
@@ -1176,7 +1182,14 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
         }
         Seen::Entity { id, .. } => {
             if access(h, "access_entity")
-                && let Some(riders) = h.entity(*id).and_then(|e| e.passengers(h)).map(|v| v.len()).filter(|&n| n > 0)
+                && let Some(riders) = h.entity(*id).map(|e| {
+                    let mut n = 0usize;
+                    let _ = e.visit_passengers(h, &mut |_| {
+                        n += 1;
+                        std::ops::ControlFlow::Continue(())
+                    });
+                    n
+                }).filter(|&n| n > 0)
             {
                 lines.push(Line::text(trf(h, "jade.access.entity.passengers", "Passengers: {0}", &[&riders.to_string()])));
             }
@@ -1341,14 +1354,13 @@ fn draw_el(g: &mut Gfx<'_>, theme: &theme::Theme, e: &El, x: f32, y: f32, h_line
             let fill_w = ((w - 2.0) * frac.clamp(0.0, 1.0)).floor();
             if fill_w > 0.0 && !fluid.is_empty() {
                 if h.fluid_key(fluid).is_some() {
-                    if g.clip([x + 1.0, y + 1.0, fill_w, 10.0]) {
+                    g.clipped([x + 1.0, y + 1.0, fill_w, 10.0], |g| {
                         let mut tx = 0.0;
                         while tx < fill_w {
                             g.fluid(fluid, [x + 1.0 + tx, y + 1.0], 10.0);
                             tx += 10.0;
                         }
-                        g.unclip();
-                    }
+                    });
                 } else if fluid == "minecraft:powder_snow" {
                     g.fill([x + 1.0, y + 1.0, fill_w, 10.0], 0xFFF0_F0F0);
                 }

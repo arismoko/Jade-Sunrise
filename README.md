@@ -8,7 +8,7 @@ inside. The code is a rewrite of Jade's logic on Sunrise's API, checked against 
 files, GUI sprites and themes are included unchanged. This is an unofficial port: see `NOTICE` for credits.
 
 - **Mod id:** `jade`. The version is in `sunrise-mod.toml`.
-- **Game build:** pinned to Sunrise Dev 2026-11-24, commit `3d34bbe` (`sunrise-mod.toml`), Minecraft 26.3. The launcher
+- **Game build:** pinned to Sunrise Dev 1 (`dev-2026-11-25-bdad86d`), commit `bdad86d` (`sunrise-mod.toml`), Minecraft 26.3. The launcher
   compiles the mod against that build's prebuilt game, so a newer build needs a repinned release.
 - **Install:** find Jade in Discover in Sunrise's launcher.
 - **Licence:** CC BY-NC-SA 4.0, like Jade itself: free to use and share, not for commercial use, and changes are

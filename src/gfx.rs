@@ -1,7 +1,7 @@
-//! Drawing on Sunrise's `DrawContext`: legacy `§` text as styled components, scaled text through `gui_paint`'s pose,
+//! Drawing on Sunrise's `DrawContext`: legacy `§` text as styled components, scaled text through a canvas scope,
 //! items by id, Jade's own sprites (shipped in `assets/jade/textures/gui/sprites`, so in the GUI atlas as
 //! `jade:<name>`), and a transform for the overlay's Display Scale and its fade.
-use mod_api::client::hud_layout::{GuiDraw, PoseOp};
+use mod_api::client::hud_layout::PoseOp;
 use mod_api::*;
 use mod_api::text::TextStyle;
 use std::cell::RefCell;
@@ -173,12 +173,7 @@ impl<'a> Gfx<'a> {
         if color >> 24 == 0 {
             return;
         }
-        let draws = [
-            GuiDraw::Push(vec![PoseOp::Translate(x, y), PoseOp::Scale(k, k)]),
-            GuiDraw::Text { text: rich(s), x: 0, y: 0, color, shadow },
-            GuiDraw::Pop,
-        ];
-        let _ = self.d.gui_paint(&draws);
+        paint_text(self.d, &rich(s), [x, y], k, color, shadow);
     }
 
     pub fn text(&mut self, s: &str, at: [f32; 2], base: u32, shadow: bool) {
@@ -233,6 +228,12 @@ impl<'a> Gfx<'a> {
     }
 }
 
+/// `text` at `at`, scaled by `k`, in a draw group of its own: the styled text through a canvas, in a child scope that
+/// translates and scales. A refused draw adds nothing.
+fn paint_text(d: &mut dyn DrawContext, text: &Text, at: [f32; 2], k: f32, color: u32, shadow: bool) {
+    let _ = d.draw_gui(&mut |canvas| canvas.scope(&[PoseOp::Translate(at[0], at[1]), PoseOp::Scale(k, k)], None, &mut |child| child.text(text, [0.0, 0.0], color, shadow)));
+}
+
 /// `Util.getMillis`' zero: when the mod first drew a scrolling label.
 fn started() -> std::time::Instant {
     static AT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
@@ -277,12 +278,7 @@ impl Gfx<'_> {
         let [x, y] = [self.pivot[0] + (at[0] - self.pivot[0]) * self.scale, self.pivot[1] + (at[1] - self.pivot[1]) * self.scale];
         let k = self.scale;
         let color = fade(base, self.alpha);
-        let draws = [
-            GuiDraw::Push(vec![PoseOp::Translate(x, y), PoseOp::Scale(k, k)]),
-            GuiDraw::Text { text: t.clone(), x: 0, y: 0, color, shadow },
-            GuiDraw::Pop,
-        ];
-        let _ = self.d.gui_paint(&draws);
+        paint_text(self.d, t, [x, y], k, color, shadow);
     }
 
     /// A component between `x0` and `x1`, centred on the band `y0`..`y1` (AbstractWidget.renderScrollingString): one
@@ -295,22 +291,20 @@ impl Gfx<'_> {
             return;
         }
         let offset = scroll_offset(w - (x1 - x0), started().elapsed().as_secs_f64());
-        if self.clip([x0, y0, x1 - x0, y1 - y0]) {
-            self.text_comp(t, [x0 - offset, y], base, true);
-            self.unclip();
-        }
+        self.clipped([x0, y0, x1 - x0, y1 - y0], |g| g.text_comp(t, [x0 - offset, y], base, true));
     }
 
-    /// `GuiGraphics.enableScissor` over `rect` (before the transform). False when the game refused it: then nothing
-    /// was opened, so don't `unclip`.
-    pub fn clip(&mut self, rect: [f32; 4]) -> bool {
+    /// `GuiGraphics.enableScissor` over `rect` (before the transform), `disableScissor` after `draw`, which draws through
+    /// the same transform on the clipped context. When the game refuses the scissor, `draw` is not called.
+    pub fn clipped(&mut self, rect: [f32; 4], draw: impl FnOnce(&mut Gfx<'_>)) {
         let r = self.r(rect);
-        self.d.push_clip(r).is_ok()
-    }
-
-    /// `disableScissor`: closes the clip `clip` opened last.
-    pub fn unclip(&mut self) {
-        let _ = self.d.pop_clip();
+        let (h, pivot, scale, alpha) = (self.h, self.pivot, self.scale, self.alpha);
+        let mut draw = Some(draw);
+        let _ = self.d.with_scissor(r, &mut |d| {
+            if let Some(draw) = draw.take() {
+                draw(&mut Gfx { d, h, pivot, scale, alpha });
+            }
+        });
     }
 
     /// A button as the game draws one (AbstractButton.renderWidget): the state's nine-sliced sprite, inactive before

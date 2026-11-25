@@ -6,7 +6,7 @@
 //!
 //! Sunrise has no way into another screen's page (Options > Mods' Config button opens a mod's registered settings):
 //! the screens open from Jade's Open Config key and `/jadec config`. The list, its cards and the navigation column are
-//! clipped to their boxes (`push_clip`), as Java's scissors cut them. Jade's key binds can be rebound and reset right
+//! clipped to their boxes (`Gfx::clipped`, over `DrawContext::with_scissor`), as Java's scissors cut them. Jade's key binds can be rebound and reset right
 //! here through `ModKeyMappingRef::set_binding` and `reset_binding`, staying in sync with Controls.
 //!
 //! Its words are the jar's language files (shipped in assets), keys named beside each use.
@@ -1692,26 +1692,24 @@ impl Ui {
             tooltip = self.draw_cards(game, batch, m);
         } else {
             // AbstractSelectionList's scissor: rows crossing the list's edges show their part inside it.
-            let clipped = batch.clip(list);
-            for (i, row_index) in self.shown.iter().enumerate() {
-                let y = list[1] + 2.0 - self.scroll + i as f32 * ROW;
-                if y + ROW <= list[1] || y >= list[1] + list[3] {
-                    continue;
+            batch.clipped(list, |batch| {
+                for (i, row_index) in self.shown.iter().enumerate() {
+                    let y = list[1] + 2.0 - self.scroll + i as f32 * ROW;
+                    if y + ROW <= list[1] || y >= list[1] + list[3] {
+                        continue;
+                    }
+                    let row = &self.rows[*row_index];
+                    let hover = if self.keyboard { self.focused_row() == Some(*row_index) } else { hit(list, m) && m[1] >= y && m[1] < y + ROW };
+                    // extractSelection.
+                    if hover && row.kind != Kind::Title {
+                        batch.fill([list[0], y, list[2], ROW], 0x33FF_FFFF);
+                    }
+                    self.draw_row(game, batch, row, *row_index, left, width, y, m);
+                    if hover && !self.keyboard && m[0] < row_rects(left, width, y, false).value[0] {
+                        tooltip = Some((row, m));
+                    }
                 }
-                let row = &self.rows[*row_index];
-                let hover = if self.keyboard { self.focused_row() == Some(*row_index) } else { hit(list, m) && m[1] >= y && m[1] < y + ROW };
-                // extractSelection.
-                if hover && row.kind != Kind::Title {
-                    batch.fill([list[0], y, list[2], ROW], 0x33FF_FFFF);
-                }
-                self.draw_row(game, batch, row, *row_index, left, width, y, m);
-                if hover && !self.keyboard && m[0] < row_rects(left, width, y, false).value[0] {
-                    tooltip = Some((row, m));
-                }
-            }
-            if clipped {
-                batch.unclip();
-            }
+            });
         }
         if self.shown.is_empty() {
             let text = tr(game, "gui.jade.no_results", "No results :(");
@@ -1770,31 +1768,29 @@ impl Ui {
         let focused = self.focused_row().map(|r| if self.rows[r].secondary { self.rows[r].parent.unwrap_or(r) } else { r });
         let mut tooltip = None;
         // The list's scissor: cards crossing its edges show their part inside it.
-        let clipped = batch.clip(list);
-        for (at, row_index) in self.shown.iter().enumerate() {
-            let Some(rect) = self.card_rect(at) else { continue };
-            let [x, y, w, h] = rect;
-            if y + h + CARD_BLEED <= list[1] || y - CARD_BLEED >= list[1] + list[3] {
-                continue;
+        batch.clipped(list, |batch| {
+            for (at, row_index) in self.shown.iter().enumerate() {
+                let Some(rect) = self.card_rect(at) else { continue };
+                let [x, y, w, h] = rect;
+                if y + h + CARD_BLEED <= list[1] || y - CARD_BLEED >= list[1] + list[3] {
+                    continue;
+                }
+                let row = &self.rows[*row_index];
+                if row.kind == Kind::Title {
+                    let label = if row.danger { colored(row.label.as_str(), 0xFF5555) } else { Text::literal(row.label.as_str()) };
+                    let tw = gfx::width(game, &row.label);
+                    batch.text_comp(&label, [x + ((w - tw) / 2.0).floor(), y + 9.0], rgba(255, 255, 255, 255), true);
+                    continue;
+                }
+                let over = hit(list, m) && !on_panel && hit([x - CARD_BLEED, y - CARD_BLEED, w + 2.0 * CARD_BLEED, h + 2.0 * CARD_BLEED], m);
+                let hovered = if self.keyboard { focused == Some(*row_index) } else { over };
+                self.draw_card(game, batch, row, *row_index, rect, hovered, m);
+                let title_x = x + 2.0 + if row.icon.is_some() { 26.0 } else { 6.0 };
+                if over && !self.keyboard && m[0] >= title_x && m[0] < title_x + gfx::width(game, &row.label) && m[1] < y + h - 10.0 {
+                    tooltip = Some((row, m));
+                }
             }
-            let row = &self.rows[*row_index];
-            if row.kind == Kind::Title {
-                let label = if row.danger { colored(row.label.as_str(), 0xFF5555) } else { Text::literal(row.label.as_str()) };
-                let tw = gfx::width(game, &row.label);
-                batch.text_comp(&label, [x + ((w - tw) / 2.0).floor(), y + 9.0], rgba(255, 255, 255, 255), true);
-                continue;
-            }
-            let over = hit(list, m) && !on_panel && hit([x - CARD_BLEED, y - CARD_BLEED, w + 2.0 * CARD_BLEED, h + 2.0 * CARD_BLEED], m);
-            let hovered = if self.keyboard { focused == Some(*row_index) } else { over };
-            self.draw_card(game, batch, row, *row_index, rect, hovered, m);
-            let title_x = x + 2.0 + if row.icon.is_some() { 26.0 } else { 6.0 };
-            if over && !self.keyboard && m[0] >= title_x && m[0] < title_x + gfx::width(game, &row.label) && m[1] < y + h - 10.0 {
-                tooltip = Some((row, m));
-            }
-        }
-        if clipped {
-            batch.unclip();
-        }
+        });
         if let (Some(entry), Some(panel)) = (entry, panel) {
             let on_row = self.draw_popup(game, batch, entry, panel, m);
             if on_row.is_some() {
@@ -1935,25 +1931,23 @@ impl Ui {
         let titles = self.titles();
         let current = self.current_title(m);
         // OptionsNav's scissor: entries scrolled past its edges are cut there.
-        let clipped = batch.clip(nav);
-        for (i, row) in titles.iter().enumerate() {
-            let y = nav[1] + i as f32 * NAV_ROW - self.nav_scroll;
-            if y + NAV_ROW <= nav[1] || y >= nav[1] + nav[3] {
-                continue;
+        batch.clipped(nav, |batch| {
+            for (i, row) in titles.iter().enumerate() {
+                let y = nav[1] + i as f32 * NAV_ROW - self.nav_scroll;
+                if y + NAV_ROW <= nav[1] || y >= nav[1] + nav[3] {
+                    continue;
+                }
+                let label = &self.rows[*row].label;
+                // OptionsNav.Entry.extractContent.
+                if self.focus == Focus::Nav(i) {
+                    batch.fill([0.0, y, NAV_W - 2.0, NAV_ROW], 0x33FF_FFFF);
+                }
+                batch.text_rgb(label, [10.0, y + 5.0], 0xFFFFFF, true);
+                if current == Some(*row) {
+                    batch.fill([2.0, y + 2.0, 2.0, NAV_ROW - 4.0], 0xFFFF_FFFF);
+                }
             }
-            let label = &self.rows[*row].label;
-            // OptionsNav.Entry.extractContent.
-            if self.focus == Focus::Nav(i) {
-                batch.fill([0.0, y, NAV_W - 2.0, NAV_ROW], 0x33FF_FFFF);
-            }
-            batch.text_rgb(label, [10.0, y + 5.0], 0xFFFFFF, true);
-            if current == Some(*row) {
-                batch.fill([2.0, y + 2.0, 2.0, NAV_ROW - 4.0], 0xFFFF_FFFF);
-            }
-        }
-        if clipped {
-            batch.unclip();
-        }
+        });
     }
 
     /// The search box: `jade:search_box_background`, or its high_contrast version with a line under it.
@@ -1986,14 +1980,12 @@ impl Ui {
             let caret = gfx::width(game, &before);
             let shift = (caret - (w - text_x - 2.0)).max(0.0);
             // The box's inner width: text scrolled past its edges is cut there.
-            let clipped = batch.clip([x + text_x, y, (w - text_x).max(0.0), h]);
-            batch.text_rgb(&field.text, [x + text_x - shift, y + text_y], color, true);
-            if focused && (self.opened.elapsed().as_millis() / 300).is_multiple_of(2) {
-                batch.fill([x + text_x - shift + caret, y + text_y - 1.0, 1.0, 10.0], 0xFFE0_E0E0);
-            }
-            if clipped {
-                batch.unclip();
-            }
+            batch.clipped([x + text_x, y, (w - text_x).max(0.0), h], |batch| {
+                batch.text_rgb(&field.text, [x + text_x - shift, y + text_y], color, true);
+                if focused && (self.opened.elapsed().as_millis() / 300).is_multiple_of(2) {
+                    batch.fill([x + text_x - shift + caret, y + text_y - 1.0, 1.0, 10.0], 0xFFE0_E0E0);
+                }
+            });
         }
     }
 
