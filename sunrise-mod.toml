@@ -1,6 +1,6 @@
 id = "jade"
 name = "Jade"
-version = "26.3.12"
+version = "26.3.13"
 description = "Shows what you are looking at. A port of Jade (Snownee, CC BY-NC-SA 4.0) to Sunrise's mod API."
 authors = ["Sunrise port: Joeypc6", "Snownee", "arismoko"]
 api = "0.2"
