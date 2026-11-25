@@ -42,6 +42,7 @@ pub(crate) fn command() -> CommandRegistration {
 pub(crate) fn register_payload(r: &mut dyn Registrar) {
     r.payload_handlers()
         .registrar("1")
+        .optional()
         .play_to_client(channel(), Some(Arc::new(Open)));
 }
 
