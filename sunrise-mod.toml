@@ -1,6 +1,6 @@
 id = "jade"
 name = "Jade"
-version = "26.3.14"
+version = "26.3.15"
 description = "Shows what you are looking at. A port of Jade (Snownee, CC BY-NC-SA 4.0) to Sunrise's mod API."
 authors = ["Sunrise port: Joeypc6", "Snownee", "arismoko"]
 api = "0.2"
@@ -18,5 +18,5 @@ guideme = { version = "^0.1", optional = true }
 
 [native]
 game = "26.3"
-sunrise = "6a02076f89cd189d74d63492dda5b023fa85a38f"
+sunrise = "ba1f24e4ad41246b558230aa665539dc768b1287"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"

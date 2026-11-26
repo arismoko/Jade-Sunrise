@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Speed and jump factor lines, the `POI:` line and mobs' sitting pose now read the game's own values.
+- Icons use the game's pick results (a block's pick-block item, an entity's pick result).
+- Options › Mods' Config button opens Jade's config screens.
+
 - Rebuilt against Sunrise Dev 1: scoped GUI drawing, `/jadec` as a client command with its own executor, config files
   through `config/`, fluid, tag, passenger and effect reads on the current host API.
 

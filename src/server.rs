@@ -277,8 +277,14 @@ fn block_request(
         provider(host, &req, &mut lines);
     }
     REQUEST_HIT.with_borrow_mut(|h| *h = None);
+    // BlockState.getCloneItemStack (pick block): the item the block's icon shows, mod blocks' own included.
+    let pick = p
+        .clone_item_stack(host, level, pos, false)
+        .and_then(|stack| stack.item().id(&*host).map(str::to_owned))
+        .filter(|id| id != "minecraft:air" && !id.contains(char::is_whitespace))
+        .unwrap_or_default();
     Some(lines_out(
-        format!("B {} {} {}", pos[0], pos[1], pos[2]),
+        format!("B {} {} {} {pick}", pos[0], pos[1], pos[2]),
         lines,
     ))
 }
@@ -485,9 +491,17 @@ fn describe(
                 .map(|i| (i.id(host).unwrap_or_default().to_owned(), None)),
         }
     });
+    // Entity.getPickResult (NeoForge's getPickedResult): what picking the entity gives, as the overlay's icon.
+    let picked_stack = e.pick_result(&*host).and_then(|stack| {
+        Some((
+            stack.item().id(&*host)?.to_owned(),
+            api::stack_components(&stack),
+        ))
+    });
     let (icon, icon_comp) = shown
         .filter(|(id, _)| id != "minecraft:air")
-        .unwrap_or_else(|| entity_icon(host, &kind, &nbt));
+        .or(picked_stack.filter(|(id, _)| id != "minecraft:air"))
+        .unwrap_or_else(|| entity_icon(&kind, &nbt));
     let dimension = p.dimension(host).map(|d| d.to_string()).unwrap_or_default();
     let pos = e.block_position(host).unwrap_or([0; 3]);
     let req = Request {
@@ -517,50 +531,24 @@ fn describe(
     Some(lines_out(head, lines))
 }
 
-/// Entity.getPickResult as the icon: a mob's spawn egg, the framed item, the vehicle's item, a dropped item's own.
-fn entity_icon(host: &dyn Host, kind: &str, nbt: &Compound) -> (String, Option<Compound>) {
+/// The icon of an entity the game gives no pick result for (`Entity.getPickResult` is empty for a falling block and
+/// a display): the block or item it shows.
+fn entity_icon(kind: &str, nbt: &Compound) -> (String, Option<Compound>) {
     let item_of = |key: &str| {
         cget(nbt, key)
             .and_then(stack_of)
             .map(|(id, _, comp)| (id, comp))
     };
+    let block_of = |key: &str| {
+        cget(nbt, key)
+            .and_then(|t| string(tget(t, "Name")))
+            .unwrap_or_default()
+    };
     match kind {
-        "minecraft:item" => item_of("Item").unwrap_or_default(),
-        "minecraft:item_frame" | "minecraft:glow_item_frame" => {
-            item_of("Item").unwrap_or_else(|| (kind.to_owned(), None))
-        }
         "minecraft:item_display" => item_of("item").unwrap_or_default(),
-        "minecraft:block_display" => (
-            cget(nbt, "block_state")
-                .and_then(|t| string(tget(t, "Name")))
-                .unwrap_or_default(),
-            None,
-        ),
-        "minecraft:falling_block" => (
-            cget(nbt, "BlockState")
-                .and_then(|t| string(tget(t, "Name")))
-                .unwrap_or_default(),
-            None,
-        ),
-        "minecraft:painting"
-        | "minecraft:armor_stand"
-        | "minecraft:end_crystal"
-        | "minecraft:leash_knot" => (kind.to_owned(), None),
-        k if k.ends_with("minecart") || k.ends_with("boat") || k.ends_with("raft") => {
-            (k.to_owned(), None)
-        }
-        _ => {
-            let egg = format!("{kind}_spawn_egg");
-            if host
-                .item_keys()
-                .into_iter()
-                .any(|k| k.id(host) == Some(egg.as_str()))
-            {
-                (egg, None)
-            } else {
-                (String::new(), None)
-            }
-        }
+        "minecraft:block_display" => (block_of("block_state"), None),
+        "minecraft:falling_block" => (block_of("BlockState"), None),
+        _ => (String::new(), None),
     }
 }
 

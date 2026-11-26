@@ -550,6 +550,14 @@ pub fn open(game: &mut dyn ClientHost) {
     UI.with_borrow_mut(|u| *u = Some(ui));
 }
 
+/// Options › Mods' Config button: the game opens Jade's mod screen itself, so this only readies the screens' state
+/// (HomeConfigScreen) for it.
+pub fn open_from_mods_screen(game: &dyn ClientHost) {
+    let mut ui = new_ui(Host::Mod);
+    ui.preview = opts::opt(game, "preview_overlay") != "false";
+    UI.with_borrow_mut(|u| *u = Some(ui));
+}
+
 /// `client_tick_post`: what the screen hooks couldn't do (sounds, chat lines, closing), and the screen's end when
 /// something else took its place.
 pub fn tick(game: &mut dyn ClientHost) {

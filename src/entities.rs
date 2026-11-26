@@ -419,6 +419,9 @@ pub fn lines(
     }
     // EntityDetailsBodyProvider: pose, leads.
     if access(host, "access_entity") {
+        // The entity's own sitting test (Panda.isSitting, Camel.isCamelSitting, Fox.isSitting,
+        // TamableAnimal.isInSittingPose).
+        let sitting = e.is_sitting(host).unwrap_or(false);
         let pose = match (kind, e.pose(host)) {
             ("minecraft:armadillo", _)
                 if string(cget(nbt, "state")).as_deref() == Some("rolling") =>
@@ -427,18 +430,12 @@ pub fn lines(
             }
             ("minecraft:axolotl", _) if flag(nbt, "PlayingDead") => Some("1000"),
             ("minecraft:fox", _) if flag(nbt, "Sleeping") => Some("2"),
-            ("minecraft:fox", _) if flag(nbt, "Sitting") => Some("10"),
-            ("minecraft:camel" | "minecraft:camel_husk", _)
-                if int(cget(nbt, "LastPoseTick")).is_some_and(|t| t < 0) =>
-            {
-                Some("10")
-            }
+            _ if sitting => Some("10"),
             (_, Some("sleeping")) => Some("2"),
             (_, Some("swimming")) => Some("3"),
             (_, Some("crouching")) => Some("5"),
             (_, Some("dying")) => Some("7"),
             (_, Some("sitting")) => Some("10"),
-            _ if flag(nbt, "Sitting") || flag(nbt, "OrderedToSit") => Some("10"),
             _ => None,
         };
         if let Some(pose) = pose {
