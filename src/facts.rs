@@ -260,7 +260,7 @@ pub(crate) fn shears_message(host: &dyn Host) -> String {
                         .ok()
                         .and_then(|id| tags.key(&id)),
                 )
-                .and_then(|(k, tag)| tags.is_in_tag(k, tag))
+                .and_then(|(k, tag)| tags.is_in_tag(k, tag.typed()))
                 == Some(true)
         }
     };

@@ -495,7 +495,7 @@ fn describe(
     let picked_stack = e.pick_result(&*host).and_then(|stack| {
         Some((
             stack.item().id(&*host)?.to_owned(),
-            stack.project().and_then(|st| api::stack_components(&st)),
+            api::stack_components(&stack),
         ))
     });
     let (icon, icon_comp) = shown
