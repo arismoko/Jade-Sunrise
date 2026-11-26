@@ -16,13 +16,11 @@ What it does:
 
 Differences from the original, each waiting on a piece of Sunrise's mod API:
 
-- The jump and speed factor lines are missing (sunrise-org/sunrise#5307, fixed for the next Sunrise build), and so are the fire odds lines (sunrise-org/sunrise#5492).
-- The `POI:` line is missing (sunrise-org/sunrise#5493).
+- The fire odds lines are missing (sunrise-org/sunrise#5492).
 - Mods that don't name themselves to Jade show a name made from their id (sunrise-org/sunrise#5494).
-- On a server without Jade, entities show no overlay; with Jade on the server every line shows (sunrise-org/sunrise#4741, #5321, #5498). A sitting panda shows no sitting state (sunrise-org/sunrise#5499).
+- On a server without Jade, entities show no overlay; with Jade on the server every line shows (sunrise-org/sunrise#4741, #5321, #5498).
 - Dropped items don't show their own tooltip lines (sunrise-org/sunrise#5332).
-- A mod block or entity that picks a different item than its plain one shows its plain item as the icon (sunrise-org/sunrise#5289, #5495).
-- Options › Mods' Config button doesn't open Jade's screens; use the Open Config key or `/jadec config` (sunrise-org/sunrise#1217).
+- A mod block or entity that picks a different item than its plain one shows its plain item as the icon on a server without Jade (sunrise-org/sunrise#5495).
 - "Edit ignore list in Files…" prints the paths in chat (sunrise-org/sunrise#5336).
 - Narrate is silent while the Narrator option is "Chat only" (sunrise-org/sunrise#5496).
 

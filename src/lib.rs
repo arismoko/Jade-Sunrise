@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Jade (Snownee, CC BY-NC-SA 4.0; Jade-mc26.3-Fabric-26.3.5) for Sunrise's mod API: the look-at
 //! overlay for blocks and entities, its providers, themes, config screens and profiles, its keys, `/jade` and `/jadec`,
 //! and the `jade:max_position_deviation` rule. Written against Hooks only (no mixins, no `[[inject]]`), so it builds
@@ -36,6 +37,13 @@ impl Hooks for Mod {
         // `/<ns>` commands menu: the client's side of its channel.
         commands_menu::register_payload(r);
         client::register_keys(r);
+        // Options › Mods' Config button opens Jade's own config screens (HomeConfigScreen), not a flat settings page.
+        // Jade's options live in its own files and screens, grouped by Jade's own sections, so none are registered as
+        // host settings and `categorize_setting` has nothing to group.
+        let _ = r.register_config_screen(std::sync::Arc::new(|host: &dyn ClientHost| {
+            config_ui::open_from_mods_screen(host);
+            true
+        }));
         server::register_rules(r);
         // `jade:request` (client to server) and `jade:data` (server to client). Optional, as Jade's: a client without
         // Jade joins a Jade server, and Jade's client-side lines work on a server without it.

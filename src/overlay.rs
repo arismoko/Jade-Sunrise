@@ -66,6 +66,8 @@ pub struct Client {
     /// The overlay is up (not hidden), so the server is asked.
     pub active: bool,
     pub block_data: Option<([i32; 3], Vec<String>, Instant)>,
+    /// The pick-block item the server gave for the block at this position (`BlockState.getCloneItemStack`).
+    pub block_pick: Option<([i32; 3], String)>,
     pub entity_data: Option<EntityData>,
     pub asked: Option<(String, Instant)>,
     /// Show Overlay toggled off; Toggle Fluid on.
@@ -1420,8 +1422,8 @@ fn info_lines(
                 }
             }
             if on(h, "block_properties") {
-                // BlockPropertiesProvider. Speed and jump factors and fire's odds have no read in the mod API yet, so
-                // their lines are left out until it has one (jade-facts.md).
+                // BlockPropertiesProvider. Fire's odds have no read in the mod API yet, so their lines are left out
+                // until it has one (jade-facts.md).
                 let f = crate::facts::fact(h, block).unwrap_or_default();
                 lines.push(Line::text(trf(
                     h,
@@ -1437,6 +1439,22 @@ fn info_lines(
                         &[&format!("§f{}", trim2(f64::from(r)))],
                     )));
                 }
+                if let Some(v) = f.speed_factor.filter(|v| *v != 1.0) {
+                    lines.push(Line::text(trf(
+                        h,
+                        "jade.block_speed_factor",
+                        "Speed factor: %s",
+                        &[&format!("§f{}", trim2(f64::from(v)))],
+                    )));
+                }
+                if let Some(v) = f.jump_factor.filter(|v| *v != 1.0) {
+                    lines.push(Line::text(trf(
+                        h,
+                        "jade.block_jump_factor",
+                        "Jump factor: %s",
+                        &[&format!("§f{}", trim2(f64::from(v)))],
+                    )));
+                }
             }
             if show_id {
                 lines.push(Line::text(format!("§8{block}")));
@@ -1450,6 +1468,21 @@ fn info_lines(
                         if !id.is_empty() {
                             lines.push(Line::text(format!("§8{}", trf(h, "config.jade.plugin_jade.registry_name.special.block_entity_type", "BlockEntity: %s", &[id]))));
                         }
+                    }
+                    // PoiTypes.forState: the point of interest type the state belongs to.
+                    if let Some(poi) = h
+                        .block_state_id(&state)
+                        .and_then(|bs| h.block_states().poi_type(bs))
+                    {
+                        lines.push(Line::text(format!(
+                            "§8{}",
+                            trf(
+                                h,
+                                "config.jade.plugin_jade.registry_name.special.poi",
+                                "POI: %s",
+                                &[&poi.to_string()]
+                            )
+                        )));
                     }
                     if let Some(fs) = h
                         .block_state_id(&state)
@@ -1703,7 +1736,14 @@ pub fn build(h: &dyn ClientHost, seen: &Seen) -> Option<BuiltBox> {
                     )
                 }
                 None => {
-                    let item = block_item(h, block);
+                    let item = with(|c| {
+                        c.block_pick
+                            .as_ref()
+                            .filter(|(p, _)| p == pos)
+                            .map(|(_, item)| item.clone())
+                    })
+                    .filter(|item| gfx::item_key(h, item).is_some())
+                    .or_else(|| block_item(h, block));
                     if item.is_none()
                         && let Some(fs) = h
                             .block_state_id(state)

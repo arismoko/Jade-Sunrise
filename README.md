@@ -35,21 +35,18 @@ files, GUI sprites and themes are included unchanged. This is an unofficial port
 
 Each of these waits on a piece of Sunrise's mod API, filed on Sunrise:
 
-- **Block properties.** The jump and speed factor lines are missing (sunrise-org/sunrise#5307, fixed for the next
-  Sunrise build). The fire ignite and burn odds lines are missing too (sunrise-org/sunrise#5492).
-- **Registry names.** The `POI:` line for a block's point of interest is missing (sunrise-org/sunrise#5493).
+- **Block properties.** The fire ignite and burn odds lines are missing (sunrise-org/sunrise#5492). The jump and speed
+  factor lines show for blocks whose factor isn't 1.
 - **Mod names.** Mods that don't name themselves through Jade's provider API or a language key show a name made from
   their id. A few common ones are named by hand (sunrise-org/sunrise#5494).
 - **Entities on a server without Jade.** The client can't read an entity's type, item, pose or synced data yet, so on
   a server without Jade an entity shows no overlay (sunrise-org/sunrise#4741, #5321, #5498). With Jade on the server,
-  every line shows. A sitting panda shows no sitting state (sunrise-org/sunrise#5499).
+  every line shows.
 - **Dropped items' tooltip lines.** The item's own tooltip lines aren't shown under a dropped item
   (sunrise-org/sunrise#5332).
-- **Picked items.** The game's own pick result isn't readable, so the icon is worked out by the port: heads, pots,
-  banners, frames, vehicles and spawn eggs come out right, but a mod block or entity that picks a different item than
-  its plain one shows its plain item (sunrise-org/sunrise#5289, #5495).
-- **Mods screen.** Options › Mods' Config button doesn't open Jade's screens. Use the Open Config key or `/jadec config`
-  (sunrise-org/sunrise#1217).
+- **Picked items.** A block's icon is its pick-block item and an entity's icon is the game's own pick result. Only a
+  block or entity that picks a different item than its plain one on a server without Jade still shows the plain item
+  (sunrise-org/sunrise#5495).
 - **Ignore lists.** "Edit ignore list in Files…" prints the files' paths in chat instead of opening the folder
   (sunrise-org/sunrise#5336).
 - **Narrator.** Narrate stays silent while the Narrator option is "Chat only"; Jade speaks then (sunrise-org/sunrise#5496).

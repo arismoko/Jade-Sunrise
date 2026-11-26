@@ -7,8 +7,9 @@
 //!   (`loot_table_load`, read only) and sends the list to each client with its settings answer, as Java's
 //!   `ServerHandshakePacket.shearableBlocks` does.
 //!
-//! Speed factor, jump factor and fire's ignite and burn odds have no read in the mod API yet, so their
-//! `BlockPropertiesProvider` lines are left out (see jade-facts.md).
+//! The speed and jump factors come from `BlockStates::speed_factor` and `jump_factor` (the block's declared values).
+//! Fire's ignite and burn odds have no read in the mod API yet, so their `BlockPropertiesProvider` lines are left out
+//! (see jade-facts.md).
 
 use mod_api::serde_json::Value;
 use mod_api::*;
@@ -24,6 +25,10 @@ pub(crate) struct Fact {
     pub requires_tool: bool,
     /// `Block.getExplosionResistance()`.
     pub explosion_resistance: Option<f32>,
+    /// `Block.getSpeedFactor()`: 1.0 for most blocks, 0.4 for soul sand and honey.
+    pub speed_factor: Option<f32>,
+    /// `Block.getJumpFactor()`: 1.0 for most blocks, 0.5 for honey.
+    pub jump_factor: Option<f32>,
 }
 
 thread_local! {
@@ -46,6 +51,8 @@ pub(crate) fn fact(h: &dyn Host, block: &str) -> Option<Fact> {
         hardness: states.destroy_speed(state)?,
         requires_tool: states.requires_correct_tool(state).unwrap_or(false),
         explosion_resistance: states.explosion_resistance(state),
+        speed_factor: states.speed_factor(state),
+        jump_factor: states.jump_factor(state),
     };
     FACTS.with_borrow_mut(|m| m.insert(block.to_owned(), f));
     Some(f)

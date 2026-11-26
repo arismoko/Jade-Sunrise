@@ -342,11 +342,15 @@ pub fn from_server(data: &[u8]) {
         return;
     }
     if let Some(rest) = head.strip_prefix("B ") {
-        let v: Vec<i32> = rest.split(' ').filter_map(|s| s.parse().ok()).collect();
+        let mut w = rest.split(' ');
+        let v: Vec<i32> = w.by_ref().take(3).filter_map(|s| s.parse().ok()).collect();
         let [x, y, z] = v.as_slice() else { return };
+        // The block's pick-block item, empty when the game gave none.
+        let pick = w.next().unwrap_or("").to_owned();
         let lines: Vec<String> = it.take(256).map(str::to_owned).collect();
         with(|c| {
             c.block_data = Some(([*x, *y, *z], lines, Instant::now()));
+            c.block_pick = Some(([*x, *y, *z], pick)).filter(|(_, p)| !p.is_empty());
             if c.entity_data.as_ref().is_some_and(|d| d.picked) {
                 c.entity_data = None;
             }
@@ -359,6 +363,7 @@ pub fn logged_out() {
     with(|c| {
         c.sent_epoch = 0;
         c.block_data = None;
+        c.block_pick = None;
         c.entity_data = None;
         c.asked = None;
         c.pinned = None;
@@ -418,4 +423,19 @@ fn command(h: &mut dyn ClientHost, invocation: &CommandInvocation) -> Option<i32
         _ => say(h, "/jadec config | use_profile <0-3> | pin | handlers | generate_server_overrides [pattern]".to_owned()),
     }
     Some(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_answer_keeps_its_pick_item() {
+        from_server(b"B 1 2 3 minecraft:wheat_seeds\nline");
+        let pick = crate::overlay::with(|c| c.block_pick.clone());
+        assert_eq!(pick, Some(([1, 2, 3], "minecraft:wheat_seeds".to_owned())));
+        from_server(b"B 1 2 3 \nline");
+        assert_eq!(crate::overlay::with(|c| c.block_pick.clone()), None);
+        logged_out();
+    }
 }
